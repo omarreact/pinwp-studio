@@ -78,7 +78,7 @@ pub fn provision(app:&AppHandle,id:&str)->Result<ProvisionResult,String>{
 
         let admin_user="admin".to_string();
         let admin_password=format!("PinWP-{}-{}!",&Uuid::new_v4().simple().to_string()[..8],&Uuid::new_v4().simple().to_string()[..8]);
-        let site_url=format!("http://127.0.0.1:{}",site.port);
+        let site_url=format!("http://{}:{}",site.domain,site.port);
         run_wp(app,&public,&vec![
             "core".into(),"install".into(),format!("--url={site_url}"),format!("--title={}",site.name),
             format!("--admin_user={admin_user}"),format!("--admin_password={admin_password}"),
