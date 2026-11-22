@@ -48,10 +48,29 @@ fn validate(input: &DeployInput) -> Result<(), String> {
     {
         return Err("Remote path is invalid or unsafe.".into());
     }
-    if input.kind == "connector"
-        && !(input.site_url.starts_with("https://") || input.site_url.starts_with("http://"))
-    {
-        return Err("Connector site URL must start with http:// or https://.".into());
+    if input.kind == "connector" || input.kind == "ssh" {
+        let site_url = input.site_url.trim().trim_end_matches('/');
+        if !site_url.is_empty() {
+            let hostname_path = site_url.strip_prefix("https://").or_else(|| site_url.strip_prefix("http://"));
+            let valid = hostname_path.is_some_and(|host| {
+                !host.is_empty()
+                    && !host.starts_with('/')
+                    && host.bytes().all(|c| c.is_ascii_alphanumeric()
+                        || matches!(c, b'.' | b'-' | b':' | b'/' | b'_' | b'~' | b'%'))
+            });
+            if !valid {
+                return Err("Remote site URL must be a valid http(s) URL without shell or credential characters.".into());
+            }
+            if site_url.starts_with("http://")
+                && !site_url.starts_with("http://localhost")
+                && !site_url.starts_with("http://127.0.0.1")
+                && !site_url.contains(".localhost")
+            {
+                return Err("Remote deployments require HTTPS unless the target is localhost.".into());
+            }
+        } else if input.kind == "connector" {
+            return Err("Connector site URL is required.".into());
+        }
     }
     Ok(())
 }
