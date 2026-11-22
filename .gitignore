@@ -11,3 +11,4 @@ src-tauri/.cargo/
 
 .pinwp/
 runtime-cache/
+src-tauri/runtime/
