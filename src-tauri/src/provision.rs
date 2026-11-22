@@ -22,7 +22,7 @@ fn clear_directory(path:&Path)->Result<(),String>{
     Ok(())
 }
 
-fn php_escape(value:&str)->String{value.replace('\\',"/").replace(''',"\\'")}
+fn php_escape(value:&str)->String{value.replace('\\',"/").replace('\'',"\\'")}
 
 fn write_config(public:&Path,private:&Path)->Result<(),String>{
     let sample=public.join("wp-config-sample.php");
