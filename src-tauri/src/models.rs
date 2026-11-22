@@ -166,3 +166,28 @@ pub struct CompatibilityReport {
     pub theme_count: usize,
     pub output: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeVersionSource {
+    pub key: String,
+    pub version: String,
+    pub url: String,
+    pub sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeVersionItem {
+    pub key: String,
+    pub version: String,
+    pub installed: bool,
+    pub bundled: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeVersionCatalog {
+    pub php: Vec<RuntimeVersionItem>,
+    pub wordpress: Vec<RuntimeVersionItem>,
+}
