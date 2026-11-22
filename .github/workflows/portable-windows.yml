@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: ["feat/offline-runtime-pack", "feat/full-product-v1"]
+    branches: ["feat/offline-runtime-pack", "feat/full-product-v1", "fix/**"]
   pull_request:
     paths:
       - "src/**"
@@ -43,6 +43,16 @@ jobs:
           ./scripts/test-runtime-windows.ps1
           ./scripts/test-full-runtime-windows.ps1
           ./scripts/test-database-conversion-windows.ps1
+      - name: Validate PHP Connector syntax
+        shell: pwsh
+        run: |
+          & "dist/runtime-windows-x64/php/php.exe" -l "connector/pinwp-connector.php"
+          if ($LASTEXITCODE -ne 0) { throw "PinWP Connector PHP lint failed" }
+      - name: Build fully offline NSIS Windows installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis --config src-tauri/tauri.installer.conf.json
+          if ($LASTEXITCODE -ne 0) { throw "NSIS installer build failed" }
       - name: Assemble portable package
         shell: pwsh
         run: |
@@ -87,6 +97,25 @@ jobs:
             if (-not (Test-Path $required)) { throw "Portable package is missing $required" }
           }
           Write-Host "PINWP FULL PORTABLE LAYOUT PASS"
+      - name: Verify Windows setup EXE and generate SHA-256
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe" -File | Select-Object -First 1
+          if (-not $installer -or $installer.Length -lt 1000000) {
+            throw "No valid NSIS setup executable was generated"
+          }
+          Copy-Item $installer.FullName "dist/PinWP-Studio-Windows-Setup.exe"
+          $digest = (Get-FileHash "dist/PinWP-Studio-Windows-Setup.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "SHA256: $digest" | Set-Content "dist/windows-setup-sha256.txt"
+          Write-Host "PINWP WINDOWS SETUP PASS ($digest)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinwp-studio-windows-installer
+          path: |
+            dist/PinWP-Studio-Windows-Setup.exe
+            dist/windows-setup-sha256.txt
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: pinwp-studio-windows-portable-v1
