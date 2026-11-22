@@ -1,5 +1,5 @@
 import type {
-  CompatibilityReport, CreateSiteInput, DatabaseResult, DeployInput, DeployResult,
+  CompatibilityMatrixReport, CompatibilityReport, CreateSiteInput, DatabaseResult, DeployInput, DeployResult,
   GitInfo, LogRecord, ProvisionResult, RouterInfo, RuntimePreflight, ShareInfo,
   SiteRecord, SnapshotRecord, RuntimeVersionCatalog,
 } from '../types';
@@ -23,6 +23,7 @@ export const createSnapshot = (id: string, name: string) => invokeNative<Snapsho
 export const restoreSnapshot = (id: string, snapshotId: string) => invokeNative<void>('restore_snapshot', { id, snapshotId });
 export const deleteSnapshot = (id: string, snapshotId: string) => invokeNative<void>('delete_snapshot', { id, snapshotId });
 export const exportSite = (id: string) => invokeNative<string>('export_site', { id });
+export const exportDatabaseSql = (id: string) => invokeNative<string>('export_database_sql', { id });
 export const importSite = (id: string, archive: string) => invokeNative<void>('import_site', { id, archive });
 export const listLogs = (id: string) => invokeNative<LogRecord[]>('list_logs', { id });
 export const readLog = (path: string, maxBytes = 200_000) => invokeNative<string>('read_log', { path, maxBytes });
@@ -31,6 +32,7 @@ export const gitInit = (id: string) => invokeNative<GitInfo>('git_init', { id })
 export const gitCommit = (id: string, message: string) => invokeNative<GitInfo>('git_commit', { id, message });
 export const openCode = (id: string) => invokeNative<void>('open_code', { id });
 export const startTunnel = (id: string) => invokeNative<ShareInfo>('start_tunnel', { id });
+export const startNamedTunnel = (id: string, token: string, hostname: string) => invokeNative<ShareInfo>('start_named_tunnel', { id, token, hostname });
 export const stopTunnel = (id: string) => invokeNative<void>('stop_tunnel', { id });
 export const startMailpit = () => invokeNative<string>('start_mailpit');
 export const stopMailpit = () => invokeNative<void>('stop_mailpit');
@@ -39,8 +41,10 @@ export const enableRouter = (id: string) => invokeNative<RouterInfo>('enable_rou
 export const disableRouter = (id: string) => invokeNative<RouterInfo>('disable_router', { id });
 export const runWpCli = (id: string, args: string[], allowUnsafe: boolean) => invokeNative<string>('run_wp_cli', { id, args, allowUnsafe });
 export const compatibilityReport = (id: string) => invokeNative<CompatibilityReport>('compatibility_report', { id });
+export const compatibilityMatrix = (id: string) => invokeNative<CompatibilityMatrixReport>('compatibility_matrix', { id });
 export const testDeployment = (input: DeployInput) => invokeNative<DeployResult>('test_deployment', { input });
 export const deploySite = (input: DeployInput) => invokeNative<DeployResult>('deploy_site', { input });
+export const rollbackDeployment = (input: DeployInput) => invokeNative<DeployResult>('rollback_deployment', { input });
 export const runtimeVersions = () => invokeNative<RuntimeVersionCatalog>('runtime_versions');
 export const installRuntimeVersion = (kind: 'php' | 'wordpress', key: string) => invokeNative<RuntimeVersionCatalog>('install_runtime_version', { kind, key });
 export const removeRuntimeVersion = (kind: 'php' | 'wordpress', key: string) => invokeNative<RuntimeVersionCatalog>('remove_runtime_version', { kind, key });

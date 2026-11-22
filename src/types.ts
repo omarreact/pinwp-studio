@@ -96,3 +96,17 @@ export interface RuntimeVersionCatalog {
   php: RuntimeVersionItem[];
   wordpress: RuntimeVersionItem[];
 }
+
+export interface CompatibilityMatrixRow {
+  phpVersion: string;
+  wordpressVersion: string;
+  passed: boolean;
+  activePluginsTested: number;
+  activeTheme?: string | null;
+  output: string;
+}
+export interface CompatibilityMatrixReport {
+  rows: CompatibilityMatrixRow[];
+  passed: number;
+  failed: number;
+}

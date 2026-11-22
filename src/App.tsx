@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import * as api from './lib/tauri';
 import type {
-  CompatibilityReport, CreateSiteInput, DeployInput, GitInfo, LogRecord,
+  CompatibilityMatrixReport, CompatibilityReport, CreateSiteInput, DeployInput, GitInfo, LogRecord,
   ProvisionResult, RouterInfo, RuntimePreflight, RuntimeVersionCatalog, ShareInfo, SiteRecord, SnapshotRecord,
 } from './types';
 
@@ -56,6 +56,8 @@ export default function App() {
   const [git, setGit] = useState<GitInfo>();
   const [commitMessage, setCommitMessage] = useState('');
   const [share, setShare] = useState<ShareInfo>();
+  const [namedTunnelToken, setNamedTunnelToken] = useState('');
+  const [namedTunnelHostname, setNamedTunnelHostname] = useState('');
   const [router, setRouter] = useState<RouterInfo>();
   const [mailpitUrl, setMailpitUrl] = useState<string>();
   const [archivePath, setArchivePath] = useState('');
@@ -63,6 +65,7 @@ export default function App() {
   const [wpCliOutput, setWpCliOutput] = useState('');
   const [unsafeCli, setUnsafeCli] = useState(false);
   const [compatibility, setCompatibility] = useState<CompatibilityReport>();
+  const [matrixReport, setMatrixReport] = useState<CompatibilityMatrixReport>();
   const [deploy, setDeploy] = useState<DeployInput>(defaultDeploy);
   const [deployOutput, setDeployOutput] = useState('');
   const [runtimeVersions, setRuntimeVersions] = useState<RuntimeVersionCatalog>();
@@ -169,7 +172,7 @@ export default function App() {
         </section>}
 
         {tab === 'Files' && <section className="module-panel"><div className="section-heading"><div><span className="eyebrow">FILES & MIGRATION</span><h3>Import / export workspace</h3></div></div>
-          <div className="action-grid"><button className="action-card" onClick={()=>api.openExternal(selected.path)}><FolderOpen/><strong>Open workspace</strong><span>{selected.path}</span></button><button className="action-card" onClick={async()=>{const p=await run(()=>api.exportSite(selected.id),'Export package created.');if(p)setArchivePath(p)}}><Download/><strong>Export .pinwp.zip</strong><span>Files + database + manifest</span></button></div>
+          <div className="action-grid"><button className="action-card" onClick={()=>api.openExternal(selected.path)}><FolderOpen/><strong>Open workspace</strong><span>{selected.path}</span></button><button className="action-card" onClick={async()=>{const p=await run(()=>api.exportSite(selected.id),'Export package created.');if(p)setArchivePath(p)}}><Download/><strong>Export .pinwp.zip</strong><span>Files + database + manifest</span></button><button className="action-card" onClick={async()=>{const p=await run(()=>api.exportDatabaseSql(selected.id),'MySQL-compatible SQL exported.');if(p)setArchivePath(p)}}><Database/><strong>Export MySQL SQL</strong><span>MariaDB dump or SQLite → MySQL conversion</span></button></div>
           <label className="field">Archive path<input value={archivePath} onChange={(e)=>setArchivePath(e.target.value)} placeholder="C:\path\site.pinwp.zip"/></label>
           <button className="secondary" disabled={!archivePath||busy} onClick={async()=>{if(!window.confirm('Import will replace the current workspace files and database. Continue?'))return;await run(()=>api.importSite(selected.id,archivePath),'Import completed.');await refresh();}}><Upload size={15}/> Import into this workspace</button>
         </section>}
@@ -185,7 +188,7 @@ export default function App() {
 
         {tab === 'Share' && <section className="module-panel"><div className="section-heading"><div><span className="eyebrow">SHARE & ROUTING</span><h3>Local HTTPS, tunnel and mail</h3></div></div>
           <div className="action-grid three">
-            <div className="service-card"><Cloud/><strong>Cloudflare Quick Tunnel</strong><span>{share?.url || 'Ephemeral public preview'}</span><div className="button-row"><button className="primary" disabled={selected.status!=='running'} onClick={async()=>{const s=await run(()=>api.startTunnel(selected.id));if(s)setShare(s)}}>Start</button><button className="secondary" onClick={()=>run(()=>api.stopTunnel(selected.id),'Tunnel stopped.')}>Stop</button></div></div>
+            <div className="service-card"><Cloud/><strong>Cloudflare Quick Tunnel</strong><span>{share?.url || 'Ephemeral public preview'}</span><div className="button-row"><button className="primary" disabled={selected.status!=='running'} onClick={async()=>{const s=await run(()=>api.startTunnel(selected.id));if(s)setShare(s)}}>Start</button><button className="secondary" onClick={()=>run(()=>api.stopTunnel(selected.id),'Tunnel stopped.')}>Stop</button></div></div><div className="service-card"><Cloud/><strong>Persistent Tunnel</strong><span>Use a Cloudflare dashboard tunnel token; Access protection can be applied to its hostname.</span><input className="service-input" type="password" value={namedTunnelToken} onChange={(e)=>setNamedTunnelToken(e.target.value)} placeholder="Tunnel token"/><input className="service-input" value={namedTunnelHostname} onChange={(e)=>setNamedTunnelHostname(e.target.value)} placeholder="dev.example.com"/><div className="button-row"><button className="primary" disabled={selected.status!=='running'||!namedTunnelToken} onClick={async()=>{const s=await run(()=>api.startNamedTunnel(selected.id,namedTunnelToken,namedTunnelHostname),'Persistent tunnel started. Token was not saved.');if(s)setShare(s)}}>Start</button><button className="secondary" onClick={()=>run(()=>api.stopTunnel(selected.id),'Tunnel stopped.')}>Stop</button></div></div>
             <div className="service-card"><ShieldCheck/><strong>Clean local HTTPS</strong><span>{router?.url || `${selected.slug}.wpdev.local`}</span><div className="button-row">{router?.enabled?<button className="secondary" onClick={async()=>{const r=await run(()=>api.disableRouter(selected.id));if(r)setRouter(r)}}>Disable</button>:<button className="primary" onClick={async()=>{const r=await run(()=>api.enableRouter(selected.id),'Windows will request administrator permission to update hosts/trust the local CA.');if(r)setRouter(r)}}>Enable</button>}</div></div>
             <div className="service-card"><Mail/><strong>Mailpit</strong><span>{mailpitUrl || 'SMTP 1025 · UI 8025'}</span><div className="button-row"><button className="primary" onClick={async()=>{const url=await run(()=>api.startMailpit());if(url){setMailpitUrl(url);api.openExternal(url)}}}>Start / Open</button><button className="secondary" onClick={()=>run(()=>api.stopMailpit(),'Mailpit stopped.')}>Stop</button></div></div>
           </div>
@@ -203,7 +206,7 @@ export default function App() {
             <label className="span-2">Remote site URL<input value={deploy.siteUrl} onChange={(e)=>setDeploy({...deploy,siteUrl:e.target.value})} placeholder="https://example.com"/></label>
           </div>
           <p className="module-note">Secrets are used for the current action only and are not written to the site registry. SSH uses your Windows OpenSSH key/agent; the secret field is ignored for SSH.</p>
-          <div className="button-row"><button className="secondary" onClick={async()=>{const r=await run(()=>api.testDeployment({...deploy,siteId:selected.id}));if(r)setDeployOutput(r.message)}}>Test connection</button><button className="primary" onClick={async()=>{const r=await run(()=>api.deploySite({...deploy,siteId:selected.id}));if(r)setDeployOutput(r.message)}}>Backup + Deploy</button></div>
+          <div className="button-row"><button className="secondary" onClick={async()=>{const r=await run(()=>api.testDeployment({...deploy,siteId:selected.id}));if(r)setDeployOutput(r.message)}}>Test connection</button><button className="primary" onClick={async()=>{const r=await run(()=>api.deploySite({...deploy,siteId:selected.id}));if(r)setDeployOutput(r.message)}}>Backup + Deploy</button><button className="danger-soft" disabled={deploy.kind==='cpanel'} onClick={async()=>{if(!window.confirm('Restore the latest PinWP remote backup?'))return;const r=await run(()=>api.rollbackDeployment({...deploy,siteId:selected.id}));if(r)setDeployOutput(r.message)}}><RotateCcw size={15}/> Rollback latest</button></div>
           <pre className="output">{deployOutput || 'Deployment output will appear here.'}</pre>
         </section>}
 
@@ -218,8 +221,8 @@ export default function App() {
             <div><h4>WordPress Versions</h4><div className="version-list">{runtimeVersions?.wordpress.map((v)=><div key={v.key}><span><strong>WordPress {v.key}</strong><small>{v.version}{v.bundled?' · bundled':''}</small></span>{v.installed?<button className="secondary compact" disabled={v.bundled||busy} onClick={async()=>{const c=await run(()=>api.removeRuntimeVersion('wordpress',v.key),'WordPress version removed.');if(c)setRuntimeVersions(c)}}>{v.bundled?'Default':'Remove'}</button>:<button className="primary compact" disabled={busy} onClick={async()=>{const c=await run(()=>api.installRuntimeVersion('wordpress',v.key),'WordPress version installed and cached.');if(c)setRuntimeVersions(c)}}>Install</button>}</div>)}</div></div>
           </div>
           <label className="field">WP-CLI arguments<input value={wpCli} onChange={(e)=>setWpCli(e.target.value)} placeholder="plugin list"/></label><label className="check-row"><input type="checkbox" checked={unsafeCli} onChange={(e)=>setUnsafeCli(e.target.checked)}/> Allow eval / shell commands</label>
-          <div className="button-row"><button className="primary" onClick={async()=>{const out=await run(()=>api.runWpCli(selected.id,splitArgs(wpCli),unsafeCli));if(out!==undefined)setWpCliOutput(out)}}><SquareTerminal size={15}/> Run WP-CLI</button><button className="secondary" onClick={()=>run(()=>api.openCode(selected.id),'VS Code opened.')}><Code2 size={15}/> Open VS Code</button><button className="secondary" onClick={async()=>{const c=await run(()=>api.compatibilityReport(selected.id));if(c)setCompatibility(c)}}><Activity size={15}/> Compatibility check</button></div>
-          <pre className="output">{wpCliOutput || compatibility?.output || 'Tool output will appear here.'}</pre>
+          <div className="button-row"><button className="primary" onClick={async()=>{const out=await run(()=>api.runWpCli(selected.id,splitArgs(wpCli),unsafeCli));if(out!==undefined)setWpCliOutput(out)}}><SquareTerminal size={15}/> Run WP-CLI</button><button className="secondary" onClick={()=>run(()=>api.openCode(selected.id),'VS Code opened.')}><Code2 size={15}/> Open VS Code</button><button className="secondary" onClick={async()=>{const c=await run(()=>api.compatibilityReport(selected.id));if(c)setCompatibility(c)}}><Activity size={15}/> Compatibility check</button><button className="secondary" onClick={async()=>{const m=await run(()=>api.compatibilityMatrix(selected.id),'Compatibility matrix completed.');if(m)setMatrixReport(m)}}><Activity size={15}/> Run full matrix</button></div>
+          <pre className="output">{wpCliOutput || compatibility?.output || 'Tool output will appear here.'}</pre>{matrixReport&&<div className="matrix-wrap"><div className="matrix-summary"><strong>{matrixReport.passed} passed</strong><span>{matrixReport.failed} failed</span></div><div className="matrix-table"><div className="matrix-head"><span>PHP</span><span>WordPress</span><span>Result</span><span>Project smoke</span></div>{matrixReport.rows.map((row)=><div key={row.phpVersion+'-'+row.wordpressVersion} className={row.passed?'matrix-row pass':'matrix-row fail'}><span>{row.phpVersion}</span><span>{row.wordpressVersion}</span><strong>{row.passed?'PASS':'FAIL'}</strong><span title={row.output}>{row.activePluginsTested} plugins{row.activeTheme?' · '+row.activeTheme:''}</span></div>)}</div></div>}
         </section>}
       </div>}
 
