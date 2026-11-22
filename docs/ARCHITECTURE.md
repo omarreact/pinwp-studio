@@ -2,7 +2,7 @@
 
 ## Goal
 
-PinWP Studio is a lightweight, offline-first WordPress desktop workstation. It should create as many isolated local WordPress sites as disk/RAM allow, expose clean local domains, provide optional public development links, and migrate or deploy to ordinary WordPress hosting.
+PinWP Studio is a lightweight, offline-first WordPress desktop workstation. It should create as many isolated local WordPress sites as disk/RAM allow, expose clean local development URLs, provide optional public development links, and migrate or deploy to ordinary WordPress hosting.
 
 ## Runtime modes
 
@@ -62,7 +62,7 @@ PinWP Studio/
         └── .pinwp/site.json
 ```
 
-A future local router maps `site.wpdev.local` to the assigned loopback port.
+The current milestone uses standards-based `site.localhost:<port>` URLs, which resolve to loopback without DNS or hosts-file changes. A future local router will add no-port `.wpdev.local` domains and trusted local HTTPS.
 
 ## Runtime Packs
 
