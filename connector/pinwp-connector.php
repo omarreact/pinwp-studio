@@ -272,9 +272,13 @@ add_action('rest_api_init', function () {
                     throw new RuntimeException('Package must contain a public/ directory.');
                 }
                 $backup = pinwp_backup_files($private);
-                pinwp_copy_files($staging . DIRECTORY_SEPARATOR . 'public', ABSPATH, true);
-                file_put_contents($private . DIRECTORY_SEPARATOR . 'latest.json',
+                // Publish the recovery pointer BEFORE changing live files, even if copy fails mid-way.
+                $written = file_put_contents($private . DIRECTORY_SEPARATOR . 'latest.json',
                     wp_json_encode(['archive' => basename($backup), 'date' => gmdate('c')]), LOCK_EX);
+                if ($written === false) {
+                    throw new RuntimeException('Backup created, but its recovery record could not be written.');
+                }
+                pinwp_copy_files($staging . DIRECTORY_SEPARATOR . 'public', ABSPATH, true);
                 return [
                     'ok' => true,
                     'backup' => 'Private pre-deployment file backup created',
