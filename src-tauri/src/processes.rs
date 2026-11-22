@@ -6,7 +6,19 @@ use uuid::Uuid;
 #[derive(Default)]
 pub struct ProcessRegistry{site_servers:Mutex<HashMap<String,Child>>,tunnels:Mutex<HashMap<String,Child>>,mariadb:Mutex<Option<Child>>,mailpit:Mutex<Option<Child>>}
 impl Drop for ProcessRegistry{fn drop(&mut self){if let Ok(mut p)=self.site_servers.lock(){for (_,c) in p.iter_mut(){let _=c.kill();let _=c.wait();}}if let Ok(mut p)=self.tunnels.lock(){for (_,c) in p.iter_mut(){let _=c.kill();let _=c.wait();}}if let Ok(mut p)=self.mariadb.lock(){if let Some(c)=p.as_mut(){let _=c.kill();let _=c.wait();}}if let Ok(mut p)=self.mailpit.lock(){if let Some(c)=p.as_mut(){let _=c.kill();let _=c.wait();}}}}
-fn php_command(app:&AppHandle)->Result<(PathBuf,Option<PathBuf>),String>{if let Ok(path)=runtime::php_exe(app){return Ok((path,Some(runtime::php_ini(app)?))}let out=Command::new("php").arg("-v").output().map_err(|_|"PHP was not detected. Install/extract a PinWP Runtime Pack or provide PHP on PATH.".to_string())?;if !out.status.success(){return Err("PHP exists but failed its version check.".into())}Ok((PathBuf::from("php"),None))}
+fn php_command(app:&AppHandle)->Result<(PathBuf,Option<PathBuf>),String>{
+    if let Ok(path)=runtime::php_exe(app){
+        return Ok((path,Some(runtime::php_ini(app)?)));
+    }
+    let out=Command::new("php")
+        .arg("-v")
+        .output()
+        .map_err(|_|"PHP was not detected. Install/extract a PinWP Runtime Pack or provide PHP on PATH.".to_string())?;
+    if !out.status.success(){
+        return Err("PHP exists but failed its version check.".into());
+    }
+    Ok((PathBuf::from("php"),None))
+}
 pub fn is_running(state:&State<'_,ProcessRegistry>,id:&str)->bool{state.site_servers.lock().map(|p|p.contains_key(id)).unwrap_or(false)}
 pub fn start(app:&AppHandle,state:&State<'_,ProcessRegistry>,id:&str)->Result<SiteRecord,String>{if is_running(state,id){return registry::get_site(app,id)}let mut site=registry::get_site(app,id)?;if site.database_mode==DatabaseMode::Mariadb{ensure_mariadb(app,state)?}let (php,ini)=php_command(app)?;let root=PathBuf::from(&site.path);let public=root.join("public");let logs=root.join("logs");let pinwp=root.join(".pinwp");fs::create_dir_all(&logs).map_err(|e|e.to_string())?;fs::create_dir_all(&pinwp).map_err(|e|e.to_string())?;let router=pinwp.join("router.php");fs::write(&router,r#"<?php
 $path = urldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/');
