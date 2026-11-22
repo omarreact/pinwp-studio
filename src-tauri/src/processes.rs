@@ -38,4 +38,21 @@ pub fn mariadb_query(app:&AppHandle,state:&State<'_,ProcessRegistry>,site:&SiteR
 pub fn start_mailpit(app:&AppHandle,state:&State<'_,ProcessRegistry>)->Result<String,String>{if state.mailpit.lock().map_err(|_|"Mailpit lock failed.")?.is_some(){return Ok("http://127.0.0.1:8025".into())}let logs=registry::services_root(app)?.join("mailpit.log");if let Some(parent)=logs.parent(){fs::create_dir_all(parent).map_err(|e|e.to_string())?}let stdout=OpenOptions::new().create(true).append(true).open(&logs).map_err(|e|e.to_string())?;let stderr=stdout.try_clone().map_err(|e|e.to_string())?;let child=Command::new(runtime::mailpit_exe(app)?).args(["--listen","127.0.0.1:8025","--smtp","127.0.0.1:1025"]).stdout(Stdio::from(stdout)).stderr(Stdio::from(stderr)).spawn().map_err(|e|format!("Unable to start Mailpit: {e}"))?;*state.mailpit.lock().map_err(|_|"Mailpit lock failed.")?=Some(child);Ok("http://127.0.0.1:8025".into())}
 pub fn stop_mailpit(state:&State<'_,ProcessRegistry>)->Result<(),String>{if let Some(mut c)=state.mailpit.lock().map_err(|_|"Mailpit lock failed.")?.take(){let _=c.kill();let _=c.wait();}Ok(())}
 pub fn start_tunnel(app:&AppHandle,state:&State<'_,ProcessRegistry>,site:&SiteRecord)->Result<ShareInfo,String>{if site.status!=SiteStatus::Running{return Err("Start the local site before sharing it.".into())}if state.tunnels.lock().map_err(|_|"Tunnel lock failed.")?.contains_key(&site.id){return Ok(ShareInfo{running:true,url:None,log_path:None})}let log_path=PathBuf::from(&site.path).join("logs").join("cloudflared.log");let log=OpenOptions::new().create(true).truncate(true).write(true).open(&log_path).map_err(|e|e.to_string())?;let err=log.try_clone().map_err(|e|e.to_string())?;let child=Command::new(runtime::cloudflared_exe(app)?).args(["tunnel","--no-autoupdate","--url",&format!("http://127.0.0.1:{}",site.port)]).stdout(Stdio::from(log)).stderr(Stdio::from(err)).spawn().map_err(|e|format!("Unable to start Cloudflare Tunnel: {e}"))?;state.tunnels.lock().map_err(|_|"Tunnel lock failed.")?.insert(site.id.clone(),child);for _ in 0..40{thread::sleep(Duration::from_millis(500));let mut text=String::new();let _=File::open(&log_path).and_then(|mut f|f.read_to_string(&mut text));if let Some(url)=text.split_whitespace().map(|v|v.trim_matches(|c:char|c=='"'||c==','||c=='\''||c=='('||c==')')).find(|v|v.starts_with("https://")&&v.contains(".trycloudflare.com")){return Ok(ShareInfo{running:true,url:Some(url.to_string()),log_path:Some(log_path.to_string_lossy().into_owned())})}}Ok(ShareInfo{running:true,url:None,log_path:Some(log_path.to_string_lossy().into_owned())})}
+pub fn start_named_tunnel(app:&AppHandle,state:&State<'_,ProcessRegistry>,site:&SiteRecord,token:&str,hostname:&str)->Result<ShareInfo,String>{
+    if site.status!=SiteStatus::Running{return Err("Start the local site before starting a persistent tunnel.".into())}
+    let token=token.trim();
+    if token.len()<20||token.chars().any(char::is_whitespace){return Err("A valid Cloudflare Tunnel token is required.".into())}
+    stop_tunnel(state,&site.id)?;
+    let log_path=PathBuf::from(&site.path).join("logs").join("cloudflared-named.log");
+    let log=OpenOptions::new().create(true).truncate(true).write(true).open(&log_path).map_err(|e|e.to_string())?;
+    let err=log.try_clone().map_err(|e|e.to_string())?;
+    let child=Command::new(runtime::cloudflared_exe(app)?)
+        .args(["tunnel","--no-autoupdate","run","--token",token])
+        .stdout(Stdio::from(log)).stderr(Stdio::from(err)).spawn()
+        .map_err(|e|format!("Unable to start persistent Cloudflare Tunnel: {e}"))?;
+    state.tunnels.lock().map_err(|_|"Tunnel lock failed.")?.insert(site.id.clone(),child);
+    let host=hostname.trim();
+    let url=if host.is_empty(){None}else if host.starts_with("https://")||host.starts_with("http://"){Some(host.to_string())}else{Some(format!("https://{host}"))};
+    Ok(ShareInfo{running:true,url,log_path:Some(log_path.to_string_lossy().into_owned())})
+}
 pub fn stop_tunnel(state:&State<'_,ProcessRegistry>,site_id:&str)->Result<(),String>{if let Some(mut c)=state.tunnels.lock().map_err(|_|"Tunnel lock failed.")?.remove(site_id){let _=c.kill();let _=c.wait();}Ok(())}
