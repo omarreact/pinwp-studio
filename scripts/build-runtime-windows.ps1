@@ -1,8 +1,8 @@
-$ErrorActionPreference = "Stop"
-
 param(
   [string]$OutputRoot = "dist/runtime-windows-x64"
 )
+
+$ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $sources = Get-Content (Join-Path $repoRoot "runtime/sources.json") -Raw | ConvertFrom-Json
