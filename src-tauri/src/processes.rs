@@ -18,15 +18,26 @@ pub fn start(app:&AppHandle,state:&State<'_,ProcessRegistry>,id:&str)->Result<Si
     if is_running(state,id){return registry::get_site(app,id)}
     let mut site=registry::get_site(app,id)?;
     let (php,ini)=php_command(app)?;
-    let root=PathBuf::from(&site.path);let public=root.join("public");let logs=root.join("logs");
+    let root=PathBuf::from(&site.path);let public=root.join("public");let logs=root.join("logs");let pinwp=root.join(".pinwp");
     fs::create_dir_all(&logs).map_err(|e|format!("Unable to create log directory: {e}"))?;
+    fs::create_dir_all(&pinwp).map_err(|e|format!("Unable to create PinWP metadata directory: {e}"))?;
+    let router=pinwp.join("router.php");
+    let router_source=r#"<?php
+$path = urldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/');
+$file = rtrim($_SERVER['DOCUMENT_ROOT'], '/\\') . $path;
+if ($path !== '/' && is_file($file)) {
+    return false;
+}
+require $_SERVER['DOCUMENT_ROOT'] . '/index.php';
+"#;
+    fs::write(&router,router_source).map_err(|e|format!("Unable to write local WordPress router: {e}"))?;
     let log_path=logs.join("php-server.log");
     let stdout=OpenOptions::new().create(true).append(true).open(&log_path).map_err(|e|format!("Unable to open {}: {e}",log_path.display()))?;
     let stderr=stdout.try_clone().map_err(|e|format!("Unable to clone PHP log handle: {e}"))?;
-    let addr=format!("127.0.0.1:{}",site.port);let public_string=public.to_string_lossy().into_owned();
+    let addr=format!("127.0.0.1:{}",site.port);let public_string=public.to_string_lossy().into_owned();let router_string=router.to_string_lossy().into_owned();
     let mut command=Command::new(php);
     if let Some(ini)=ini{command.arg("-c").arg(ini);}
-    let child=command.args(["-S",&addr,"-t",&public_string]).current_dir(&public).stdout(Stdio::from(stdout)).stderr(Stdio::from(stderr)).spawn().map_err(|e|format!("Unable to start local PHP server: {e}"))?;
+    let child=command.args(["-S",&addr,"-t",&public_string,&router_string]).current_dir(&public).stdout(Stdio::from(stdout)).stderr(Stdio::from(stderr)).spawn().map_err(|e|format!("Unable to start local PHP server: {e}"))?;
     state.processes.lock().map_err(|_|"PinWP process registry is unavailable.".to_string())?.insert(site.id.clone(),child);
     site.status=SiteStatus::Running;registry::update_site(app,&site)?;Ok(site)
 }
