@@ -191,3 +191,22 @@ pub struct RuntimeVersionCatalog {
     pub php: Vec<RuntimeVersionItem>,
     pub wordpress: Vec<RuntimeVersionItem>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompatibilityMatrixRow {
+    pub php_version: String,
+    pub wordpress_version: String,
+    pub passed: bool,
+    pub active_plugins_tested: usize,
+    pub active_theme: Option<String>,
+    pub output: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompatibilityMatrixReport {
+    pub rows: Vec<CompatibilityMatrixRow>,
+    pub passed: usize,
+    pub failed: usize,
+}
