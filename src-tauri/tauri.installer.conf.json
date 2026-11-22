@@ -5,7 +5,7 @@
       "nsis"
     ],
     "resources": {
-      "../dist/runtime-windows-x64/": "runtime/"
+      "runtime/": "runtime/"
     },
     "windows": {
       "webviewInstallMode": {
