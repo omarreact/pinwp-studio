@@ -76,6 +76,9 @@ add_action('rest_api_init', function () {
                     if ($name === '.' || $name === '..') continue;
                     $s = $src . DIRECTORY_SEPARATOR . $name;
                     $d = $dst . DIRECTORY_SEPARATOR . $name;
+                    $relative = ltrim(str_replace(ABSPATH, '', $d), DIRECTORY_SEPARATOR);
+                    $normalized = str_replace('\\', '/', $relative);
+                    if ($relative === 'wp-config.php' || $normalized === 'wp-content/db.php') continue;
                     if (is_dir($s)) $copy($s, $d); else copy($s, $d);
                 }
             };
