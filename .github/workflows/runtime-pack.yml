@@ -5,18 +5,22 @@ concurrency:
   cancel-in-progress: true
 
 on:
+  push:
+    branches: ["feat/offline-runtime-pack", "feat/full-product-v1"]
+    paths:
+      - "runtime/**"
+      - "connector/**"
+      - "scripts/build-runtime-windows.ps1"
+      - "scripts/test-runtime-windows.ps1"
+      - "scripts/test-full-runtime-windows.ps1"
+      - ".github/workflows/runtime-pack.yml"
   pull_request:
     paths:
       - "runtime/**"
+      - "connector/**"
       - "scripts/build-runtime-windows.ps1"
       - "scripts/test-runtime-windows.ps1"
-      - ".github/workflows/runtime-pack.yml"
-  push:
-    branches: ["feat/offline-runtime-pack"]
-    paths:
-      - "runtime/**"
-      - "scripts/build-runtime-windows.ps1"
-      - "scripts/test-runtime-windows.ps1"
+      - "scripts/test-full-runtime-windows.ps1"
       - ".github/workflows/runtime-pack.yml"
   workflow_dispatch:
 
@@ -25,24 +29,23 @@ permissions:
 
 jobs:
   windows-runtime:
-    name: Build and smoke-test offline WordPress runtime
+    name: Build and smoke-test complete WordPress runtime
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
       - name: Build pinned runtime pack
         shell: pwsh
         run: ./scripts/build-runtime-windows.ps1
-
-      - name: Prove complete WordPress + SQLite install
+      - name: Prove Lite WordPress + SQLite install
         shell: pwsh
         run: ./scripts/test-runtime-windows.ps1
-
+      - name: Prove Full WordPress + MariaDB install
+        shell: pwsh
+        run: ./scripts/test-full-runtime-windows.ps1
       - name: Package runtime
         shell: pwsh
         run: Compress-Archive -Path dist/runtime-windows-x64/* -DestinationPath dist/pinwp-runtime-windows-x64.zip -CompressionLevel Optimal
-
       - uses: actions/upload-artifact@v4
         with:
           name: pinwp-runtime-windows-x64
