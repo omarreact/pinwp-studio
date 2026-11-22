@@ -17,14 +17,25 @@ try {
   & (Join-Path $maria "mariadb-install-db.exe") "--datadir=$data" "--password=$password" "--port=$port"
   if($LASTEXITCODE-ne 0){throw "MariaDB initialization failed"}
 
-  $proc=Start-Process (Join-Path $maria "mariadbd.exe") -ArgumentList @("--datadir=$data","--port=$port","--bind-address=127.0.0.1","--skip-name-resolve","--console") -PassThru -WindowStyle Hidden
+  $serverOut=Join-Path $temp "mariadb-out.log"
+  $serverErr=Join-Path $temp "mariadb-err.log"
+  $defaults=Join-Path $data "my.ini"
+  if(-not(Test-Path $defaults)){throw "MariaDB bootstrap did not generate my.ini"}
+  $proc=Start-Process (Join-Path $maria "mariadbd.exe") -ArgumentList @("--defaults-file=$defaults","--port=$port","--bind-address=127.0.0.1","--skip-name-resolve","--console") -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr -PassThru -WindowStyle Hidden
   $ready=$false
-  for($i=0;$i-lt 40;$i++){
-    Start-Sleep -Milliseconds 500
-    & (Join-Path $maria "mariadb-admin.exe") -h127.0.0.1 "-P$port" -uroot "-p$password" ping 2>$null
-    if($LASTEXITCODE-eq 0){$ready=$true;break}
+  for($i=0;$i-lt 60;$i++){
+    Start-Sleep -Milliseconds 250
+    $client = New-Object System.Net.Sockets.TcpClient
+    try { $client.Connect("127.0.0.1",$port); $ready=$true; break } catch {} finally { $client.Dispose() }
+    if($proc.HasExited){break}
   }
-  if(-not $ready){throw "MariaDB did not become ready"}
+  if(-not $ready){
+    Write-Host "=== MariaDB stdout ==="; if(Test-Path $serverOut){Get-Content $serverOut}
+    Write-Host "=== MariaDB stderr ==="; if(Test-Path $serverErr){Get-Content $serverErr}
+    throw "MariaDB did not become ready"
+  }
+  & (Join-Path $maria "mariadb-admin.exe") --protocol=tcp -h127.0.0.1 "-P$port" -uroot "-p$password" ping
+  if($LASTEXITCODE-ne 0){throw "MariaDB root authentication failed"}
 
   & (Join-Path $maria "mariadb.exe") -h127.0.0.1 "-P$port" -uroot "-p$password" -e "CREATE DATABASE pinwp_full CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER 'pinwp'@'127.0.0.1' IDENTIFIED BY 'pinwp'; GRANT ALL PRIVILEGES ON pinwp_full.* TO 'pinwp'@'127.0.0.1'; FLUSH PRIVILEGES;"
   if($LASTEXITCODE-ne 0){throw "MariaDB site database creation failed"}
