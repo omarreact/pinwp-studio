@@ -1,7 +1,7 @@
 import type {
   CompatibilityReport, CreateSiteInput, DatabaseResult, DeployInput, DeployResult,
   GitInfo, LogRecord, ProvisionResult, RouterInfo, RuntimePreflight, ShareInfo,
-  SiteRecord, SnapshotRecord,
+  SiteRecord, SnapshotRecord, RuntimeVersionCatalog,
 } from '../types';
 
 const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -41,6 +41,9 @@ export const runWpCli = (id: string, args: string[], allowUnsafe: boolean) => in
 export const compatibilityReport = (id: string) => invokeNative<CompatibilityReport>('compatibility_report', { id });
 export const testDeployment = (input: DeployInput) => invokeNative<DeployResult>('test_deployment', { input });
 export const deploySite = (input: DeployInput) => invokeNative<DeployResult>('deploy_site', { input });
+export const runtimeVersions = () => invokeNative<RuntimeVersionCatalog>('runtime_versions');
+export const installRuntimeVersion = (kind: 'php' | 'wordpress', key: string) => invokeNative<RuntimeVersionCatalog>('install_runtime_version', { kind, key });
+export const removeRuntimeVersion = (kind: 'php' | 'wordpress', key: string) => invokeNative<RuntimeVersionCatalog>('remove_runtime_version', { kind, key });
 
 export async function runtimePreflight(): Promise<RuntimePreflight> {
   if (!isTauri()) return {

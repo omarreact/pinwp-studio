@@ -8,7 +8,7 @@ import {
 import * as api from './lib/tauri';
 import type {
   CompatibilityReport, CreateSiteInput, DeployInput, GitInfo, LogRecord,
-  ProvisionResult, RouterInfo, RuntimePreflight, ShareInfo, SiteRecord, SnapshotRecord,
+  ProvisionResult, RouterInfo, RuntimePreflight, RuntimeVersionCatalog, ShareInfo, SiteRecord, SnapshotRecord,
 } from './types';
 
 const blankForm: CreateSiteInput = { name: '', slug: '', phpVersion: '8.4', wordpressVersion: 'Latest', databaseMode: 'sqlite' };
@@ -65,6 +65,7 @@ export default function App() {
   const [compatibility, setCompatibility] = useState<CompatibilityReport>();
   const [deploy, setDeploy] = useState<DeployInput>(defaultDeploy);
   const [deployOutput, setDeployOutput] = useState('');
+  const [runtimeVersions, setRuntimeVersions] = useState<RuntimeVersionCatalog>();
 
   const refresh = async () => {
     const [nextSites, nextPreflight] = await Promise.all([api.listSites(), api.runtimePreflight()]);
@@ -85,6 +86,7 @@ export default function App() {
     if (tab === 'Logs') api.listLogs(selected.id).then(setLogs).catch(() => {});
     if (tab === 'Git') api.gitStatus(selected.id).then(setGit).catch(() => {});
     if (tab === 'Share') api.routerStatus(selected.id).then(setRouter).catch(() => {});
+    if (tab === 'Tools') api.runtimeVersions().then(setRuntimeVersions).catch(() => {});
   }, [selected?.id, tab]);
 
   async function run<T>(fn: () => Promise<T>, success?: string): Promise<T | undefined> {
@@ -210,7 +212,11 @@ export default function App() {
           <div className="snapshot-list">{snapshots.map((s)=><div key={s.id}><div><strong>{s.name}</strong><span>{new Date(s.createdAt).toLocaleString()} · {bytes(s.sizeBytes)} · {s.databaseMode}</span></div><div className="button-row"><button className="secondary compact" onClick={async()=>{if(!window.confirm('Restore this snapshot? Current files/database will be replaced.'))return;await run(()=>api.restoreSnapshot(selected.id,s.id),'Snapshot restored.');await refresh();}}><RotateCcw size={13}/> Restore</button><button className="danger-soft compact" onClick={async()=>{if(!window.confirm('Delete this snapshot permanently?'))return;await run(()=>api.deleteSnapshot(selected.id,s.id),'Snapshot deleted.');setSnapshots(snapshots.filter(x=>x.id!==s.id))}}><Trash2 size={13}/></button></div></div>)}</div>
         </section>}
 
-        {tab === 'Tools' && <section className="module-panel"><div className="section-heading"><div><span className="eyebrow">TOOLS & QA</span><h3>WP-CLI and compatibility</h3></div></div>
+        {tab === 'Tools' && <section className="module-panel"><div className="section-heading"><div><span className="eyebrow">TOOLS & QA</span><h3>Runtime versions, WP-CLI and compatibility</h3></div></div>
+          <div className="version-manager">
+            <div><h4>PHP Versions</h4><div className="version-list">{runtimeVersions?.php.map((v)=><div key={v.key}><span><strong>PHP {v.key}</strong><small>{v.version}{v.bundled?' · bundled':''}</small></span>{v.installed?<button className="secondary compact" disabled={v.bundled||busy} onClick={async()=>{const c=await run(()=>api.removeRuntimeVersion('php',v.key),'PHP version removed.');if(c)setRuntimeVersions(c)}}>{v.bundled?'Default':'Remove'}</button>:<button className="primary compact" disabled={busy} onClick={async()=>{const c=await run(()=>api.installRuntimeVersion('php',v.key),'PHP version installed and cached.');if(c)setRuntimeVersions(c)}}>Install</button>}</div>)}</div></div>
+            <div><h4>WordPress Versions</h4><div className="version-list">{runtimeVersions?.wordpress.map((v)=><div key={v.key}><span><strong>WordPress {v.key}</strong><small>{v.version}{v.bundled?' · bundled':''}</small></span>{v.installed?<button className="secondary compact" disabled={v.bundled||busy} onClick={async()=>{const c=await run(()=>api.removeRuntimeVersion('wordpress',v.key),'WordPress version removed.');if(c)setRuntimeVersions(c)}}>{v.bundled?'Default':'Remove'}</button>:<button className="primary compact" disabled={busy} onClick={async()=>{const c=await run(()=>api.installRuntimeVersion('wordpress',v.key),'WordPress version installed and cached.');if(c)setRuntimeVersions(c)}}>Install</button>}</div>)}</div></div>
+          </div>
           <label className="field">WP-CLI arguments<input value={wpCli} onChange={(e)=>setWpCli(e.target.value)} placeholder="plugin list"/></label><label className="check-row"><input type="checkbox" checked={unsafeCli} onChange={(e)=>setUnsafeCli(e.target.checked)}/> Allow eval / shell commands</label>
           <div className="button-row"><button className="primary" onClick={async()=>{const out=await run(()=>api.runWpCli(selected.id,splitArgs(wpCli),unsafeCli));if(out!==undefined)setWpCliOutput(out)}}><SquareTerminal size={15}/> Run WP-CLI</button><button className="secondary" onClick={()=>run(()=>api.openCode(selected.id),'VS Code opened.')}><Code2 size={15}/> Open VS Code</button><button className="secondary" onClick={async()=>{const c=await run(()=>api.compatibilityReport(selected.id));if(c)setCompatibility(c)}}><Activity size={15}/> Compatibility check</button></div>
           <pre className="output">{wpCliOutput || compatibility?.output || 'Tool output will appear here.'}</pre>
@@ -222,7 +228,7 @@ export default function App() {
         <label>Site name<input autoFocus required value={form.name} onChange={(e)=>setForm({...form,name:e.target.value,slug:slugify(e.target.value)})} placeholder="Meta Grey Label"/></label>
         <label>Local slug<div className="domain-input"><input required value={form.slug} onChange={(e)=>setForm({...form,slug:slugify(e.target.value)})}/><span>.localhost</span></div></label>
         <div className="choice-grid"><button type="button" className={form.databaseMode==='sqlite'?'choice active':'choice'} onClick={()=>setForm({...form,databaseMode:'sqlite'})}><Database size={20}/><strong>Lite</strong><span>PHP + SQLite · zero DB server</span></button><button type="button" className={form.databaseMode==='mariadb'?'choice active':'choice'} onClick={()=>setForm({...form,databaseMode:'mariadb'})}><Database size={20}/><strong>Full</strong><span>PHP + bundled MariaDB</span></button></div>
-        <div className="form-grid"><label>PHP<select value={form.phpVersion} onChange={(e)=>setForm({...form,phpVersion:e.target.value})}><option>8.4</option></select></label><label>WordPress<select value={form.wordpressVersion} onChange={(e)=>setForm({...form,wordpressVersion:e.target.value})}><option>Latest</option><option>7.1</option></select></label></div>
+        <div className="form-grid"><label>PHP<select value={form.phpVersion} onChange={(e)=>setForm({...form,phpVersion:e.target.value})}><option>8.5</option><option>8.4</option><option>8.3</option><option>8.2</option><option>8.1</option></select></label><label>WordPress<select value={form.wordpressVersion} onChange={(e)=>setForm({...form,wordpressVersion:e.target.value})}><option>Latest</option><option>7.1</option><option>7.0</option><option>6.9</option></select></label></div>
         <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setShowCreate(false)}>Cancel</button><button className="primary" disabled={busy||!form.name||!form.slug}><Plus size={16}/> Create workspace</button></div>
       </form></div>}
     </main>

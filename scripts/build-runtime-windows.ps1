@@ -109,6 +109,7 @@ extension=zip
   New-Item -ItemType Directory -Force -Path $mailpitDir | Out-Null
   Expand-Archive $mailpitZip $mailpitDir -Force
 
+  Copy-Item (Join-Path $repoRoot "runtime/version-catalog.json") (Join-Path $output "version-catalog.json")
   $connectorDir=Join-Path $output "connector"
   New-Item -ItemType Directory -Force -Path $connectorDir | Out-Null
   $connectorStage=Join-Path $temp "connector"

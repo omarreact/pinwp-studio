@@ -85,3 +85,14 @@ export interface CompatibilityReport {
   themeCount: number;
   output: string;
 }
+
+export interface RuntimeVersionItem {
+  key: string;
+  version: string;
+  installed: boolean;
+  bundled: boolean;
+}
+export interface RuntimeVersionCatalog {
+  php: RuntimeVersionItem[];
+  wordpress: RuntimeVersionItem[];
+}
