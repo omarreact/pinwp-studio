@@ -123,40 +123,46 @@ pub fn deploy(
             let target = format!("{}@{}", input.username, input.host);
             let port = input.port.unwrap_or(22).to_string();
             let remote = input.remote_path.trim_end_matches('/');
+            let upload_name = format!(".pinwp-upload-{}.zip", site.id);
+            // Backups and staging live in the SSH account home, NOT the public document root.
+            run("ssh", &[
+                "-p".into(), port.clone(), target.clone(),
+                format!(r#"set -e
+remote='{remote}'
+test -d "$remote"
+backup="$HOME/.pinwp-backups/$(printf '%s' "$remote" | sha256sum | cut -c1-16)"
+mkdir -p "$backup"
+chmod 700 "$HOME/.pinwp-backups" "$backup"
+stamp=$(date +%Y%m%d-%H%M%S)
+tar -czf "$backup/pre-pinwp-$stamp.tgz" -C "$remote" .
+if command -v wp >/dev/null 2>&1 && [ -f "$remote/wp-config.php" ]; then
+  wp db export "$backup/pre-pinwp-$stamp.sql" --path="$remote"
+fi"#)
+            ])?;
 
-            run(
-                "ssh",
-                &[
-                    "-p".into(),
-                    port.clone(),
-                    target.clone(),
-                    format!(
-                        "set -e; stamp=$(date +%Y%m%d-%H%M%S); mkdir -p '{remote}/.pinwp-backups'; tar --exclude='./.pinwp-backups' -czf '{remote}/.pinwp-backups/pre-pinwp-'$stamp'.tgz' -C '{remote}' .; if command -v wp >/dev/null 2>&1 && [ -f '{remote}/wp-config.php' ]; then wp db export '{remote}/.pinwp-backups/pre-pinwp-'$stamp'.sql' --path='{remote}'; fi"
-                    ),
-                ],
-            )?;
+            run("scp", &[
+                "-P".into(), port.clone(), archive.clone(),
+                format!("{target}:{upload_name}")
+            ])?;
 
-            run(
-                "scp",
-                &[
-                    "-P".into(),
-                    port.clone(),
-                    archive.clone(),
-                    format!("{target}:{remote}/pinwp-deploy.zip"),
-                ],
-            )?;
-
-            run(
-                "ssh",
-                &[
-                    "-p".into(),
-                    port,
-                    target,
-                    format!(
-                        "set -e; cd '{remote}'; rm -rf .pinwp-deploy; mkdir .pinwp-deploy; unzip -oq pinwp-deploy.zip -d .pinwp-deploy; test -d .pinwp-deploy/public; if [ -f wp-config.php ]; then cp wp-config.php .pinwp-production-config.php; fi; cp -a .pinwp-deploy/public/. .; if [ -f .pinwp-production-config.php ]; then mv .pinwp-production-config.php wp-config.php; fi; rm -f wp-content/db.php; if [ -f .pinwp-deploy/database.sql ]; then command -v wp >/dev/null 2>&1 || (echo 'WP-CLI is required for database migration' >&2; exit 42); wp db import .pinwp-deploy/database.sql --path='{remote}'; wp search-replace '{local_url}' '{remote_url}' --all-tables --precise --skip-columns=guid --path='{remote}'; fi; rm -rf .pinwp-deploy pinwp-deploy.zip"
-                    ),
-                ],
-            )?
+            run("ssh", &[
+                "-p".into(), port, target,
+                format!(r#"set -e
+remote='{remote}'
+upload="$HOME/{upload_name}"
+test -f "$upload"
+stage=$(mktemp -d "$HOME/.pinwp-stage.XXXXXXXX")
+trap 'rm -rf "$stage"; rm -f "$upload"' EXIT
+unzip -q "$upload" -d "$stage"
+test -d "$stage/public"
+rm -f "$stage/public/wp-config.php" "$stage/public/wp-content/db.php"
+cp -a "$stage/public/." "$remote/"
+if [ -f "$stage/database.sql" ]; then
+  command -v wp >/dev/null 2>&1 || (echo 'WP-CLI is required for database migration' >&2; exit 42)
+  wp db import "$stage/database.sql" --path="$remote"
+  wp search-replace '{local_url}' '{remote_url}' --all-tables --precise --skip-columns=guid --path="$remote"
+fi"#)
+            ])?
         }
         "cpanel" => run(
             "curl.exe",
@@ -207,17 +213,22 @@ pub fn rollback(input: &DeployInput) -> Result<DeployResult, String> {
             let target = format!("{}@{}", input.username, input.host);
             let port = input.port.unwrap_or(22).to_string();
             let remote = input.remote_path.trim_end_matches('/');
-            run(
-                "ssh",
-                &[
-                    "-p".into(),
-                    port,
-                    target,
-                    format!(
-                        "set -e; latest=$(ls -1t '{remote}/.pinwp-backups'/pre-pinwp-*.tgz 2>/dev/null | head -1); test -n \"$latest\"; stem=$(printf '%s' \"$latest\" | sed 's/\\.tgz$//'); find '{remote}' -mindepth 1 -maxdepth 1 ! -name .pinwp-backups -exec rm -rf {{}} +; tar -xzf \"$latest\" -C '{remote}'; if [ -f \"$stem.sql\" ] && command -v wp >/dev/null 2>&1; then wp db import \"$stem.sql\" --path='{remote}'; fi; echo \"Restored $latest\""
-                    ),
-                ],
-            )?
+            run("ssh", &[
+                "-p".into(), port, target,
+                format!(r#"set -e
+remote='{remote}'
+backup="$HOME/.pinwp-backups/$(printf '%s' "$remote" | sha256sum | cut -c1-16)"
+latest=$(ls -1t "$backup"/pre-pinwp-*.tgz 2>/dev/null | head -1)
+test -n "$latest"
+tar -tzf "$latest" >/dev/null
+test -d "$remote"
+tar -xzf "$latest" -C "$remote"
+stem=$(printf '%s' "$latest" | sed 's/\.tgz$//')
+if [ -f "$stem.sql" ] && command -v wp >/dev/null 2>&1; then
+  wp db import "$stem.sql" --path="$remote"
+fi
+echo "Restored backup files without deleting newer files: $latest""#)
+            ])?
         }
         "connector" => run(
             "curl.exe",
