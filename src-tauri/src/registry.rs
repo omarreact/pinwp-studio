@@ -45,7 +45,7 @@ pub fn create_site(app:&AppHandle,input:CreateSiteInput)->Result<SiteRecord,Stri
     let root=sites_root(app)?.join(&slug);let public=root.join("public");
     for folder in ["public","logs","snapshots","exports","private",".pinwp"]{fs::create_dir_all(root.join(folder)).map_err(|e|format!("Unable to create site workspace: {e}"))?}
     write_placeholder(&public,name)?;
-    let site=SiteRecord{id:Uuid::new_v4().to_string(),name:name.to_string(),slug:slug.clone(),status:SiteStatus::Stopped,php_version:input.php_version,wordpress_version:input.wordpress_version,database_mode:input.database_mode,port:allocate_port(&sites),domain:format!("{slug}.wpdev.local"),path:root.to_string_lossy().into_owned(),provisioned:false,created_at:Utc::now().to_rfc3339()};
+    let site=SiteRecord{id:Uuid::new_v4().to_string(),name:name.to_string(),slug:slug.clone(),status:SiteStatus::Stopped,php_version:input.php_version,wordpress_version:input.wordpress_version,database_mode:input.database_mode,port:allocate_port(&sites),domain:format!("{slug}.localhost"),path:root.to_string_lossy().into_owned(),provisioned:false,created_at:Utc::now().to_rfc3339()};
     let metadata=serde_json::to_string_pretty(&site).map_err(|e|format!("Unable to serialize site metadata: {e}"))?;
     fs::write(root.join(".pinwp").join("site.json"),metadata).map_err(|e|format!("Unable to write site metadata: {e}"))?;
     sites.insert(0,site.clone());save_sites(app,&sites)?;Ok(site)

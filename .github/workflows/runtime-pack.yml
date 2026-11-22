@@ -1,0 +1,53 @@
+name: PinWP Windows Runtime Pack
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths:
+      - "runtime/**"
+      - "scripts/build-runtime-windows.ps1"
+      - "scripts/test-runtime-windows.ps1"
+      - ".github/workflows/runtime-pack.yml"
+  push:
+    branches: ["feat/offline-runtime-pack"]
+    paths:
+      - "runtime/**"
+      - "scripts/build-runtime-windows.ps1"
+      - "scripts/test-runtime-windows.ps1"
+      - ".github/workflows/runtime-pack.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-runtime:
+    name: Build and smoke-test offline WordPress runtime
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build pinned runtime pack
+        shell: pwsh
+        run: ./scripts/build-runtime-windows.ps1
+
+      - name: Prove complete WordPress + SQLite install
+        shell: pwsh
+        run: ./scripts/test-runtime-windows.ps1
+
+      - name: Package runtime
+        shell: pwsh
+        run: Compress-Archive -Path dist/runtime-windows-x64/* -DestinationPath dist/pinwp-runtime-windows-x64.zip -CompressionLevel Optimal
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinwp-runtime-windows-x64
+          path: |
+            dist/pinwp-runtime-windows-x64.zip
+            dist/runtime-windows-x64/runtime.json
+          if-no-files-found: error
+          retention-days: 14

@@ -4,8 +4,8 @@ import {
   Github, Globe2, HardDrive, Laptop, Moon, Play, Plus, RefreshCw, Search,
   Settings, ShieldCheck, Camera, SquareTerminal, Sun, Wrench,
 } from 'lucide-react';
-import { createSite, listSites, openExternal, runtimePreflight, startSite, stopSite } from './lib/tauri';
-import type { CreateSiteInput, RuntimePreflight, SiteRecord } from './types';
+import { createSite, listSites, openExternal, provisionSite, runtimePreflight, startSite, stopSite } from './lib/tauri';
+import type { CreateSiteInput, ProvisionResult, RuntimePreflight, SiteRecord } from './types';
 
 const blankForm: CreateSiteInput = {
   name: '', slug: '', phpVersion: '8.3', wordpressVersion: 'Latest', databaseMode: 'sqlite',
@@ -33,6 +33,7 @@ export default function App() {
   const [notice, setNotice] = useState<string>();
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState<CreateSiteInput>(blankForm);
+  const [credentials, setCredentials] = useState<ProvisionResult>();
 
   const refresh = async () => {
     const [nextSites, nextPreflight] = await Promise.all([listSites(), runtimePreflight()]);
@@ -61,6 +62,23 @@ export default function App() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
     } finally { setBusy(false); }
+  }
+
+  async function handleProvision() {
+    if (!selected) return;
+    setBusy(true);
+    setNotice(undefined);
+    setCredentials(undefined);
+    try {
+      const result = await provisionSite(selected.id);
+      setSites((current) => current.map((site) => site.id === result.site.id ? result.site : site));
+      setCredentials(result);
+      setNotice('WordPress installed completely from the local PinWP Runtime Pack. Save the one-time admin password shown below.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleCreate(event: FormEvent) {
@@ -108,9 +126,10 @@ export default function App() {
           <div className="top-actions">
             <button className="icon-button" onClick={() => refresh()} title="Refresh"><RefreshCw size={17}/></button>
             <button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Toggle theme">{theme === 'dark' ? <Sun size={17}/> : <Moon size={17}/>}</button>
+            {selected && !selected.provisioned && <button className="primary" disabled={busy} onClick={handleProvision}><Plus size={16}/> Install WordPress</button>}
             {selected && (selected.status === 'running'
               ? <button className="danger-soft" disabled={busy} onClick={() => handleLifecycle('stop')}><CircleStop size={16}/> Stop</button>
-              : <button className="primary" disabled={busy} onClick={() => handleLifecycle('start')}><Play size={16}/> Start</button>)}
+              : <button className="secondary" disabled={busy} onClick={() => handleLifecycle('start')}><Play size={16}/> Start</button>)}
           </div>
         </header>
         <nav className="tabbar">{tabs.map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item}</button>)}</nav>
@@ -126,8 +145,8 @@ export default function App() {
                   <div className="runtime-state"><span className={`pulse ${selected.status === 'running' ? 'online' : ''}`}/>{statusLabel(selected)}</div>
                   <h2>{selected.domain}</h2><p>Port {selected.port} · PHP {selected.phpVersion} · WordPress {selected.wordpressVersion}</p>
                   <div className="button-row">
-                    <button className="primary" disabled={selected.status !== 'running'} onClick={() => openExternal(`http://127.0.0.1:${selected.port}`)}><Globe2 size={16}/> Open site</button>
-                    <button className="secondary" disabled={!selected.provisioned} onClick={() => openExternal(`http://127.0.0.1:${selected.port}/wp-admin/`)}><ShieldCheck size={16}/> WP Admin</button>
+                    <button className="primary" disabled={selected.status !== 'running'} onClick={() => openExternal(`http://${selected.domain}:${selected.port}`)}><Globe2 size={16}/> Open site</button>
+                    <button className="secondary" disabled={!selected.provisioned} onClick={() => openExternal(`http://${selected.domain}:${selected.port}/wp-admin/`)}><ShieldCheck size={16}/> WP Admin</button>
                   </div>
                 </div>
                 <div className="environment-card">
@@ -140,6 +159,21 @@ export default function App() {
                   </dl>
                 </div>
               </section>
+
+              {credentials?.site.id === selected.id && (
+                <section className="credentials-panel">
+                  <div>
+                    <span className="eyebrow">ONE-TIME LOCAL ADMIN</span>
+                    <h3>WordPress is ready</h3>
+                    <p>{credentials.siteUrl}</p>
+                  </div>
+                  <div className="credential-values">
+                    <div><span>User</span><strong>{credentials.adminUser}</strong></div>
+                    <div><span>Password</span><strong className="mono">{credentials.adminPassword}</strong></div>
+                    <button className="secondary compact" onClick={() => navigator.clipboard.writeText(credentials.adminPassword)}>Copy password</button>
+                  </div>
+                </section>
+              )}
 
               <section>
                 <div className="section-heading"><div><span className="eyebrow">DEVELOPER SHORTCUTS</span><h3>Work without leaving PinWP</h3></div></div>
@@ -172,7 +206,7 @@ export default function App() {
           <form className="modal" onSubmit={handleCreate} onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head"><div><span className="eyebrow">NEW ENVIRONMENT</span><h2>Create WordPress workspace</h2></div><button type="button" className="icon-button" onClick={() => setShowCreate(false)}>×</button></div>
             <label>Site name<input autoFocus required value={form.name} onChange={(e) => setForm({...form,name:e.target.value,slug:slugify(e.target.value)})} placeholder="Meta Grey Label"/></label>
-            <label>Local slug<div className="domain-input"><input required value={form.slug} onChange={(e) => setForm({...form,slug:slugify(e.target.value)})} placeholder="meta-grey-label"/><span>.wpdev.local</span></div></label>
+            <label>Local slug<div className="domain-input"><input required value={form.slug} onChange={(e) => setForm({...form,slug:slugify(e.target.value)})} placeholder="meta-grey-label"/><span>.localhost</span></div></label>
             <div className="choice-grid">
               <button type="button" className={form.databaseMode === 'sqlite' ? 'choice active' : 'choice'} onClick={() => setForm({...form,databaseMode:'sqlite'})}><Database size={20}/><strong>Lite</strong><span>Native PHP + SQLite integration</span></button>
               <button type="button" className={form.databaseMode === 'mariadb' ? 'choice active' : 'choice'} onClick={() => setForm({...form,databaseMode:'mariadb'})}><Database size={20}/><strong>Full</strong><span>Native PHP + MariaDB compatibility</span></button>

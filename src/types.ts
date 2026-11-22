@@ -38,3 +38,10 @@ export interface RuntimePreflight {
   cachedSqliteIntegration: boolean;
   tools: ToolProbe[];
 }
+
+export interface ProvisionResult {
+  site: SiteRecord;
+  siteUrl: string;
+  adminUser: string;
+  adminPassword: string;
+}

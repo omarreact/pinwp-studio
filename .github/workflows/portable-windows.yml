@@ -1,0 +1,99 @@
+name: PinWP Studio Windows Portable
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: ["feat/offline-runtime-pack"]
+  pull_request:
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "runtime/**"
+      - "scripts/build-runtime-windows.ps1"
+      - "scripts/test-runtime-windows.ps1"
+      - ".github/workflows/portable-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: Build complete portable Windows package
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build desktop application
+        run: |
+          npm install
+          npm run build
+          npm run tauri:build
+
+      - name: Build and verify offline WordPress runtime
+        shell: pwsh
+        run: |
+          ./scripts/build-runtime-windows.ps1
+          ./scripts/test-runtime-windows.ps1
+
+      - name: Assemble portable package
+        shell: pwsh
+        run: |
+          $portable = "dist/PinWP-Studio-Portable"
+          New-Item -ItemType Directory -Force -Path $portable | Out-Null
+          Copy-Item "src-tauri/target/release/pinwp-studio.exe" (Join-Path $portable "pinwp-studio.exe")
+          Copy-Item "dist/runtime-windows-x64" (Join-Path $portable "runtime") -Recurse
+          @"
+          PinWP Studio Portable
+
+          1. Extract the complete folder.
+          2. Run pinwp-studio.exe.
+          3. Create a Lite / SQLite WordPress environment.
+          4. Click Install WordPress.
+          5. Save the one-time local admin password shown by PinWP.
+
+          Keep the runtime folder beside pinwp-studio.exe. After extraction, Lite WordPress creation does not require PHP, MySQL, Docker or an Internet connection.
+          "@ | Set-Content (Join-Path $portable "README.txt") -Encoding UTF8
+
+          Compress-Archive -Path "$portable/*" -DestinationPath "dist/pinwp-studio-windows-portable.zip" -CompressionLevel Optimal
+
+          $exeHash = (Get-FileHash (Join-Path $portable "pinwp-studio.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
+          $zipHash = (Get-FileHash "dist/pinwp-studio-windows-portable.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "EXE SHA256: $exeHash" | Set-Content "dist/portable-checksums.txt"
+          "ZIP SHA256: $zipHash" | Add-Content "dist/portable-checksums.txt"
+
+      - name: Verify portable layout
+        shell: pwsh
+        run: |
+          $root = "dist/PinWP-Studio-Portable"
+          foreach ($required in @(
+            "$root/pinwp-studio.exe",
+            "$root/runtime/php/php.exe",
+            "$root/runtime/php/php.ini",
+            "$root/runtime/wordpress/wp-settings.php",
+            "$root/runtime/plugins/sqlite-database-integration/db.copy",
+            "$root/runtime/wp-cli/wp-cli.phar",
+            "$root/runtime/runtime.json"
+          )) {
+            if (-not (Test-Path $required)) { throw "Portable package is missing $required" }
+          }
+          Write-Host "PINWP PORTABLE LAYOUT PASS"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinwp-studio-windows-portable
+          path: |
+            dist/pinwp-studio-windows-portable.zip
+            dist/portable-checksums.txt
+          if-no-files-found: error
+          retention-days: 14
