@@ -40,7 +40,7 @@ function mysql_index_component(string $name, string $sqliteType, int $componentC
     $mysqlType = mysql_type($sqliteType);
     $prefix = max(1, min(191, intdiv(768, max(1, $componentCount))));
     $needsPrefix = str_contains($mysqlType, 'TEXT') || str_contains($mysqlType, 'BLOB');
-    if (preg_match('/^(?:VAR)?CHAR\\((\\d+)\\)/i', $mysqlType, $match)) {
+    if (preg_match('/^(?:VAR)?CHAR\((\d+)\)/i', $mysqlType, $match)) {
         $needsPrefix = (int)$match[1] > $prefix;
     }
     return qi($name) . ($needsPrefix ? '(' . $prefix . ')' : '');
