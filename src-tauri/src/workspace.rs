@@ -1,4 +1,4 @@
-use crate::{models::{DatabaseMode,LogRecord,SnapshotRecord},processes::{self,ProcessRegistry},registry};
+use crate::{models::{DatabaseMode,LogRecord,SnapshotRecord},processes::{self,ProcessRegistry},registry,runtime};
 use chrono::Utc;
 use std::{fs,path::{Path,PathBuf},process::Command,time::UNIX_EPOCH};
 use tauri::{AppHandle,State};
@@ -25,10 +25,26 @@ pub fn restore_snapshot(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:
 pub fn delete_snapshot(app:&AppHandle,site_id:&str,snapshot_id:&str)->Result<(),String>{let snap=list_snapshots(app,site_id)?.into_iter().find(|s|s.id==snapshot_id).ok_or("Snapshot not found.")?;fs::remove_dir_all(snap.path).map_err(|e|e.to_string())}
 fn ps_quote(path:&Path)->String{path.to_string_lossy().replace(''',"''")}
 pub fn export_site(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str)->Result<String,String>{
-    let site=registry::get_site(app,site_id)?;let root=PathBuf::from(&site.path);let staging=root.join("exports").join(format!("staging-{}",Uuid::new_v4().simple()));fs::create_dir_all(&staging).map_err(|e|e.to_string())?;copy_tree(&root.join("public"),&staging.join("public"))?;
-    match site.database_mode{DatabaseMode::Sqlite=>{let db=root.join("private").join("database.sqlite");if db.exists(){fs::copy(db,staging.join("database.sqlite")).map_err(|e|e.to_string())?;}},DatabaseMode::Mariadb=>processes::dump_mariadb(app,state,&site,&staging.join("database.sql"))?}
+    let site=registry::get_site(app,site_id)?;
+    let root=PathBuf::from(&site.path);
+    let staging=root.join("exports").join(format!("staging-{}",Uuid::new_v4().simple()));
+    fs::create_dir_all(&staging).map_err(|e|e.to_string())?;
+    copy_tree(&root.join("public"),&staging.join("public"))?;
+
+    let sql=PathBuf::from(export_database_sql(app,state,site_id)?);
+    fs::copy(&sql,staging.join("database.sql")).map_err(|e|e.to_string())?;
+    if site.database_mode==DatabaseMode::Sqlite{
+        let database=root.join("private").join("database.sqlite");
+        if database.exists(){fs::copy(database,staging.join("database.sqlite")).map_err(|e|e.to_string())?;}
+    }
+
     fs::write(staging.join("manifest.json"),serde_json::to_string_pretty(&site).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
-    let archive=root.join("exports").join(format!("{}-{}.pinwp.zip",site.slug,Utc::now().format("%Y%m%d-%H%M%S")));let command=format!("Compress-Archive -Path '{}\\*' -DestinationPath '{}' -Force",ps_quote(&staging),ps_quote(&archive));let status=Command::new("powershell").args(["-NoProfile","-Command",&command]).status().map_err(|e|e.to_string())?;let _=fs::remove_dir_all(&staging);if !status.success(){return Err("Unable to create PinWP export archive.".into())}Ok(archive.to_string_lossy().into_owned())
+    let archive=root.join("exports").join(format!("{}-{}.pinwp.zip",site.slug,Utc::now().format("%Y%m%d-%H%M%S")));
+    let command=format!("Compress-Archive -Path '{}\\*' -DestinationPath '{}' -Force",ps_quote(&staging),ps_quote(&archive));
+    let status=Command::new("powershell").args(["-NoProfile","-Command",&command]).status().map_err(|e|e.to_string())?;
+    let _=fs::remove_dir_all(&staging);
+    if !status.success(){return Err("Unable to create PinWP export archive.".into())}
+    Ok(archive.to_string_lossy().into_owned())
 }
 pub fn import_site(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str,archive:&str)->Result<(),String>{
     let site=registry::get_site(app,site_id)?;if processes::is_running(state,site_id){let _=processes::stop(app,state,site_id)?}let archive=PathBuf::from(archive);if !archive.exists(){return Err("Import archive does not exist.".into())}
@@ -37,6 +53,29 @@ pub fn import_site(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str,
     if temp.join("database.sqlite").exists(){fs::copy(temp.join("database.sqlite"),PathBuf::from(&site.path).join("private").join("database.sqlite")).map_err(|e|e.to_string())?}
     if temp.join("database.sql").exists()&&site.database_mode==DatabaseMode::Mariadb{processes::restore_mariadb(app,state,&site,&temp.join("database.sql"))?}
     let _=fs::remove_dir_all(&temp);Ok(())
+}
+pub fn export_database_sql(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str)->Result<String,String>{
+    let site=registry::get_site(app,site_id)?;
+    if !site.provisioned{return Err("WordPress is not installed.".into())}
+    let root=PathBuf::from(&site.path);
+    let destination=root.join("exports").join(format!("{}-database-{}.sql",site.slug,Utc::now().format("%Y%m%d-%H%M%S")));
+    fs::create_dir_all(root.join("exports")).map_err(|e|e.to_string())?;
+    match site.database_mode{
+        DatabaseMode::Mariadb=>processes::dump_mariadb(app,state,&site,&destination)?,
+        DatabaseMode::Sqlite=>{
+            let database=root.join("private").join("database.sqlite");
+            if !database.exists(){return Err("SQLite database is missing.".into())}
+            let helper=runtime::resolve_runtime_dir(app)?.join("helpers").join("sqlite-to-mysql.php");
+            if !helper.exists(){return Err("SQLite → MySQL export helper is missing from the Runtime Pack.".into())}
+            let output=Command::new(runtime::php_exe_for(app,&site.php_version)?)
+                .arg("-c").arg(runtime::php_ini_for(app,&site.php_version)?)
+                .arg(helper).env("PINWP_DB",&database).output()
+                .map_err(|e|format!("Unable to convert SQLite database: {e}"))?;
+            if !output.status.success(){return Err(format!("SQLite → MySQL conversion failed: {}",String::from_utf8_lossy(&output.stderr)))}
+            fs::write(&destination,output.stdout).map_err(|e|e.to_string())?;
+        }
+    }
+    Ok(destination.to_string_lossy().into_owned())
 }
 pub fn list_logs(app:&AppHandle,site_id:&str)->Result<Vec<LogRecord>,String>{let site=registry::get_site(app,site_id)?;let root=PathBuf::from(&site.path);let candidates=[root.join("logs").join("php-server.log"),root.join("logs").join("cloudflared.log"),root.join("public").join("wp-content").join("debug.log"),registry::services_root(app)?.join("mariadb.log"),registry::services_root(app)?.join("mailpit.log")];let mut out=Vec::new();for p in candidates{if let Ok(m)=fs::metadata(&p){let modified=m.modified().ok().and_then(|t|t.duration_since(UNIX_EPOCH).ok()).map(|d|d.as_secs().to_string());out.push(LogRecord{name:p.file_name().and_then(|v|v.to_str()).unwrap_or("log").into(),path:p.to_string_lossy().into_owned(),size_bytes:m.len(),modified_at:modified});}}Ok(out)}
 pub fn read_log(path:&str,max_bytes:usize)->Result<String,String>{let data=fs::read(path).map_err(|e|e.to_string())?;let start=data.len().saturating_sub(max_bytes.max(1024).min(1024*1024));Ok(String::from_utf8_lossy(&data[start..]).to_string())}
