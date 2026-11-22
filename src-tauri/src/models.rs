@@ -15,6 +15,12 @@ pub struct SiteRecord {
     pub path: String,
     pub provisioned: bool,
     pub created_at: String,
+    #[serde(default)]
+    pub https_enabled: bool,
+    #[serde(default)]
+    pub custom_domain: Option<String>,
+    #[serde(default)]
+    pub last_snapshot_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -51,6 +57,10 @@ pub struct RuntimePreflight {
     pub runtime_pack_dir: String,
     pub cached_wordpress: bool,
     pub cached_sqlite_integration: bool,
+    pub cached_mariadb: bool,
+    pub cached_cloudflared: bool,
+    pub cached_caddy: bool,
+    pub cached_mailpit: bool,
     pub tools: Vec<ToolProbe>,
 }
 
@@ -61,4 +71,98 @@ pub struct ProvisionResult {
     pub site_url: String,
     pub admin_user: String,
     pub admin_password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseCredentials {
+    pub database: String,
+    pub username: String,
+    pub password: String,
+    pub host: String,
+    pub port: u16,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseResult { pub output: String, pub rows_affected: Option<u64> }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotRecord {
+    pub id: String,
+    pub name: String,
+    pub created_at: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub database_mode: DatabaseMode,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogRecord {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitInfo {
+    pub available: bool,
+    pub initialized: bool,
+    pub branch: Option<String>,
+    pub dirty: bool,
+    pub output: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareInfo {
+    pub running: bool,
+    pub url: Option<String>,
+    pub log_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouterInfo {
+    pub enabled: bool,
+    pub url: Option<String>,
+    pub domain: Option<String>,
+    pub config_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployInput {
+    pub site_id: String,
+    pub kind: String,
+    pub host: String,
+    pub port: Option<u16>,
+    pub username: String,
+    pub secret: String,
+    pub remote_path: String,
+    pub site_url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployResult {
+    pub success: bool,
+    pub stage: String,
+    pub message: String,
+    pub artifact_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompatibilityReport {
+    pub php_version: String,
+    pub wordpress_version: String,
+    pub core_checksums_ok: bool,
+    pub plugin_count: usize,
+    pub theme_count: usize,
+    pub output: String,
 }
