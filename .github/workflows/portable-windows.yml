@@ -42,6 +42,7 @@ jobs:
           ./scripts/build-runtime-windows.ps1
           ./scripts/test-runtime-windows.ps1
           ./scripts/test-full-runtime-windows.ps1
+          ./scripts/test-database-conversion-windows.ps1
       - name: Assemble portable package
         shell: pwsh
         run: |
@@ -80,7 +81,8 @@ jobs:
             "$root/runtime/mailpit/mailpit.exe",
             "$root/runtime/connector/pinwp-connector.zip",
             "$root/runtime/runtime.json",
-            "$root/runtime/version-catalog.json"
+            "$root/runtime/version-catalog.json",
+            "$root/runtime/helpers/sqlite-to-mysql.php"
           )) {
             if (-not (Test-Path $required)) { throw "Portable package is missing $required" }
           }

@@ -13,6 +13,7 @@ on:
       - "scripts/build-runtime-windows.ps1"
       - "scripts/test-runtime-windows.ps1"
       - "scripts/test-full-runtime-windows.ps1"
+      - "scripts/test-database-conversion-windows.ps1"
       - ".github/workflows/runtime-pack.yml"
   pull_request:
     paths:
@@ -43,6 +44,9 @@ jobs:
       - name: Prove Full WordPress + MariaDB install
         shell: pwsh
         run: ./scripts/test-full-runtime-windows.ps1
+      - name: Prove SQLite to MySQL WordPress migration
+        shell: pwsh
+        run: ./scripts/test-database-conversion-windows.ps1
       - name: Package runtime
         shell: pwsh
         run: Compress-Archive -Path dist/runtime-windows-x64/* -DestinationPath dist/pinwp-runtime-windows-x64.zip -CompressionLevel Optimal
