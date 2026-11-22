@@ -78,4 +78,28 @@ pub fn export_database_sql(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_
     Ok(destination.to_string_lossy().into_owned())
 }
 pub fn list_logs(app:&AppHandle,site_id:&str)->Result<Vec<LogRecord>,String>{let site=registry::get_site(app,site_id)?;let root=PathBuf::from(&site.path);let candidates=[root.join("logs").join("php-server.log"),root.join("logs").join("cloudflared.log"),root.join("public").join("wp-content").join("debug.log"),registry::services_root(app)?.join("mariadb.log"),registry::services_root(app)?.join("mailpit.log")];let mut out=Vec::new();for p in candidates{if let Ok(m)=fs::metadata(&p){let modified=m.modified().ok().and_then(|t|t.duration_since(UNIX_EPOCH).ok()).map(|d|d.as_secs().to_string());out.push(LogRecord{name:p.file_name().and_then(|v|v.to_str()).unwrap_or("log").into(),path:p.to_string_lossy().into_owned(),size_bytes:m.len(),modified_at:modified});}}Ok(out)}
-pub fn read_log(path:&str,max_bytes:usize)->Result<String,String>{let data=fs::read(path).map_err(|e|e.to_string())?;let start=data.len().saturating_sub(max_bytes.max(1024).min(1024*1024));Ok(String::from_utf8_lossy(&data[start..]).to_string())}
+pub fn read_log(app:&AppHandle,path:&str,max_bytes:usize)->Result<String,String>{
+    use std::io::{Read,Seek,SeekFrom};
+    let requested=fs::canonicalize(path).map_err(|e|format!("Log file not available: {e}"))?;
+    let mut allowed=Vec::new();
+    for site in registry::load_sites(app)? {
+        let root=PathBuf::from(site.path);
+        for name in ["php-server.log","cloudflared.log","cloudflared-named.log"] {
+            allowed.push(root.join("logs").join(name));
+        }
+        allowed.push(root.join("public").join("wp-content").join("debug.log"));
+    }
+    let services=registry::services_root(app)?;
+    allowed.push(services.join("mariadb.log"));
+    allowed.push(services.join("mailpit.log"));
+    if !allowed.iter().filter_map(|p|fs::canonicalize(p).ok()).any(|p|p==requested) {
+        return Err("Log access denied: path is not an approved PinWP log.".into());
+    }
+    let mut file=fs::File::open(&requested).map_err(|e|e.to_string())?;
+    let len=file.metadata().map_err(|e|e.to_string())?.len();
+    let limit=max_bytes.clamp(1024,1024*1024) as u64;
+    file.seek(SeekFrom::Start(len.saturating_sub(limit))).map_err(|e|e.to_string())?;
+    let mut data=Vec::with_capacity((len.min(limit)) as usize);
+    file.read_to_end(&mut data).map_err(|e|e.to_string())?;
+    Ok(String::from_utf8_lossy(&data).into_owned())
+}
