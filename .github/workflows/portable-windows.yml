@@ -1,5 +1,9 @@
 name: PinWP Studio Windows Portable
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: ["feat/offline-runtime-pack"]
