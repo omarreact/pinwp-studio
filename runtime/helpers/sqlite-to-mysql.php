@@ -42,6 +42,11 @@ function value_sql(mixed $value): string {
 
 echo "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\nSET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n\n";
 $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
+// Tables prefixed _wp_sqlite_ belong to the SQLite compatibility driver, not WordPress.
+// They are meaningless in MariaDB and may use SQLite-only TEXT primary keys.
+$tables = array_values(array_filter($tables, static function (string $table): bool {
+    return !str_starts_with($table, '_wp_sqlite_');
+}));
 
 foreach ($tables as $table) {
     $columns = $pdo->query("PRAGMA table_info(" . qi($table) . ")")->fetchAll();
