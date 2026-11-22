@@ -145,8 +145,8 @@ export default function App() {
                   <div className="runtime-state"><span className={`pulse ${selected.status === 'running' ? 'online' : ''}`}/>{statusLabel(selected)}</div>
                   <h2>{selected.domain}</h2><p>Port {selected.port} · PHP {selected.phpVersion} · WordPress {selected.wordpressVersion}</p>
                   <div className="button-row">
-                    <button className="primary" disabled={selected.status !== 'running'} onClick={() => openExternal(`http://127.0.0.1:${selected.port}`)}><Globe2 size={16}/> Open site</button>
-                    <button className="secondary" disabled={!selected.provisioned} onClick={() => openExternal(`http://127.0.0.1:${selected.port}/wp-admin/`)}><ShieldCheck size={16}/> WP Admin</button>
+                    <button className="primary" disabled={selected.status !== 'running'} onClick={() => openExternal(`http://${selected.domain}:${selected.port}`)}><Globe2 size={16}/> Open site</button>
+                    <button className="secondary" disabled={!selected.provisioned} onClick={() => openExternal(`http://${selected.domain}:${selected.port}/wp-admin/`)}><ShieldCheck size={16}/> WP Admin</button>
                   </div>
                 </div>
                 <div className="environment-card">
@@ -206,7 +206,7 @@ export default function App() {
           <form className="modal" onSubmit={handleCreate} onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head"><div><span className="eyebrow">NEW ENVIRONMENT</span><h2>Create WordPress workspace</h2></div><button type="button" className="icon-button" onClick={() => setShowCreate(false)}>×</button></div>
             <label>Site name<input autoFocus required value={form.name} onChange={(e) => setForm({...form,name:e.target.value,slug:slugify(e.target.value)})} placeholder="Meta Grey Label"/></label>
-            <label>Local slug<div className="domain-input"><input required value={form.slug} onChange={(e) => setForm({...form,slug:slugify(e.target.value)})} placeholder="meta-grey-label"/><span>.wpdev.local</span></div></label>
+            <label>Local slug<div className="domain-input"><input required value={form.slug} onChange={(e) => setForm({...form,slug:slugify(e.target.value)})} placeholder="meta-grey-label"/><span>.localhost</span></div></label>
             <div className="choice-grid">
               <button type="button" className={form.databaseMode === 'sqlite' ? 'choice active' : 'choice'} onClick={() => setForm({...form,databaseMode:'sqlite'})}><Database size={20}/><strong>Lite</strong><span>Native PHP + SQLite integration</span></button>
               <button type="button" className={form.databaseMode === 'mariadb' ? 'choice active' : 'choice'} onClick={() => setForm({...form,databaseMode:'mariadb'})}><Database size={20}/><strong>Full</strong><span>Native PHP + MariaDB compatibility</span></button>
