@@ -32,6 +32,20 @@ function mysql_type(string $sqliteType): string {
     if (str_contains($type, 'TIME')) return 'TIME';
     return 'LONGTEXT';
 }
+/**
+ * SQLite stores indexed strings as TEXT; MariaDB requires bounded index prefixes
+ * under utf8mb4 (4 bytes per character). Keep column values intact.
+ */
+function mysql_index_component(string $name, string $sqliteType, int $componentCount): string {
+    $mysqlType = mysql_type($sqliteType);
+    $prefix = max(1, min(191, intdiv(768, max(1, $componentCount))));
+    $needsPrefix = str_contains($mysqlType, 'TEXT') || str_contains($mysqlType, 'BLOB');
+    if (preg_match('/^(?:VAR)?CHAR\((\d+)\)/i', $mysqlType, $match)) {
+        $needsPrefix = (int)$match[1] > $prefix;
+    }
+    return qi($name) . ($needsPrefix ? '(' . $prefix . ')' : '');
+}
+
 function value_sql(mixed $value): string {
     if ($value === null) return 'NULL';
     if (is_int($value) || is_float($value)) return (string)$value;
@@ -42,6 +56,11 @@ function value_sql(mixed $value): string {
 
 echo "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\nSET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n\n";
 $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
+// Tables prefixed _wp_sqlite_ belong to the SQLite compatibility driver, not WordPress.
+// They are meaningless in MariaDB and may use SQLite-only TEXT primary keys.
+$tables = array_values(array_filter($tables, static function (string $table): bool {
+    return !str_starts_with($table, '_wp_sqlite_');
+}));
 
 foreach ($tables as $table) {
     $columns = $pdo->query("PRAGMA table_info(" . qi($table) . ")")->fetchAll();
@@ -59,7 +78,10 @@ foreach ($tables as $table) {
         $definitions[] = $definition;
     }
     if ($primary) {
-        $definitions[] = 'PRIMARY KEY (' . implode(',', array_map(fn($column) => qi((string)$column['name']), $primary)) . ')';
+        $definitions[] = 'PRIMARY KEY (' . implode(',', array_map(
+            fn($column) => mysql_index_component((string)$column['name'], (string)$column['type'], count($primary)),
+            $primary
+        )) . ')';
     }
 
     $indexes = $pdo->query("PRAGMA index_list(" . qi($table) . ")")->fetchAll();
@@ -69,7 +91,14 @@ foreach ($tables as $table) {
         $info = $pdo->query("PRAGMA index_info(" . qi($name) . ")")->fetchAll();
         if (!$info) continue;
         usort($info, fn($a, $b) => (int)$a['seqno'] <=> (int)$b['seqno']);
-        $cols = implode(',', array_map(fn($row) => qi((string)$row['name']), $info));
+        $columnMap = array_column($columns, null, 'name');
+        $cols = implode(',', array_map(static function ($row) use ($columnMap, $info): string {
+            $name = (string) ($row['name'] ?? '');
+            if ($name === '' || !isset($columnMap[$name])) {
+                throw new RuntimeException('Cannot migrate unsupported SQL expression index.');
+            }
+            return mysql_index_component($name, (string)$columnMap[$name]['type'], count($info));
+        }, $info));
         $definitions[] = ((int)$index['unique'] === 1 ? 'UNIQUE KEY ' : 'KEY ') . qi($name) . ' (' . $cols . ')';
     }
 
