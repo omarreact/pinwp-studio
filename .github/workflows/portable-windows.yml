@@ -1,6 +1,8 @@
 name: PinWP Studio Windows Portable
 
 on:
+  push:
+    branches: ["feat/offline-runtime-pack"]
   pull_request:
     paths:
       - "src/**"
