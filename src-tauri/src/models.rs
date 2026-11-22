@@ -21,7 +21,7 @@ pub struct SiteRecord {
 #[serde(rename_all = "camelCase")]
 pub enum SiteStatus { Stopped, Running, Provisioning, NeedsRuntime, Error }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseMode { Sqlite, Mariadb }
 
@@ -52,4 +52,13 @@ pub struct RuntimePreflight {
     pub cached_wordpress: bool,
     pub cached_sqlite_integration: bool,
     pub tools: Vec<ToolProbe>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvisionResult {
+    pub site: SiteRecord,
+    pub site_url: String,
+    pub admin_user: String,
+    pub admin_password: String,
 }

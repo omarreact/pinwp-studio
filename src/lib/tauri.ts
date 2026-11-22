@@ -1,4 +1,4 @@
-import type { CreateSiteInput, RuntimePreflight, SiteRecord } from '../types';
+import type { CreateSiteInput, ProvisionResult, RuntimePreflight, SiteRecord } from '../types';
 
 const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -25,6 +25,10 @@ export async function startSite(id: string): Promise<SiteRecord> {
 
 export async function stopSite(id: string): Promise<SiteRecord> {
   return invokeNative<SiteRecord>('stop_site', { id });
+}
+
+export async function provisionSite(id: string): Promise<ProvisionResult> {
+  return invokeNative<ProvisionResult>('provision_site', { id });
 }
 
 export async function runtimePreflight(): Promise<RuntimePreflight> {
