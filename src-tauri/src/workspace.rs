@@ -10,14 +10,14 @@ fn size(path:&Path)->u64{if path.is_file(){return fs::metadata(path).map(|m|m.le
 fn meta(path:&Path)->PathBuf{path.join("snapshot.json")}
 pub fn list_snapshots(app:&AppHandle,site_id:&str)->Result<Vec<SnapshotRecord>,String>{let site=registry::get_site(app,site_id)?;let root=PathBuf::from(site.path).join("snapshots");let mut out=Vec::new();if root.exists(){for e in fs::read_dir(root).map_err(|e|e.to_string())?{let p=e.map_err(|e|e.to_string())?.path();if p.is_dir()&&meta(&p).exists(){if let Ok(v)=serde_json::from_str::<SnapshotRecord>(&fs::read_to_string(meta(&p)).unwrap_or_default()){out.push(v)}}}}out.sort_by(|a,b|b.created_at.cmp(&a.created_at));Ok(out)}
 pub fn create_snapshot(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str,name:&str)->Result<SnapshotRecord,String>{
-    let mut site=registry::get_site(app,site_id)?;if processes::is_running(state,site_id){let _=processes::stop(app,state,site_id)?}
+    let mut site=registry::get_site(app,site_id)?;if processes::is_running(state,site_id){let _=processes::stop(app,state,site_id)?;}
     let id=Uuid::new_v4().simple().to_string()[..12].to_string();let created=Utc::now().to_rfc3339();let root=PathBuf::from(&site.path).join("snapshots").join(format!("{}-{}",Utc::now().format("%Y%m%d-%H%M%S"),id));fs::create_dir_all(&root).map_err(|e|e.to_string())?;
     copy_tree(&PathBuf::from(&site.path).join("public"),&root.join("public"))?;
     match site.database_mode{DatabaseMode::Sqlite=>{let db=PathBuf::from(&site.path).join("private").join("database.sqlite");if db.exists(){fs::copy(db,root.join("database.sqlite")).map_err(|e|e.to_string())?;}},DatabaseMode::Mariadb=>processes::dump_mariadb(app,state,&site,&root.join("database.sql"))?}
     let record=SnapshotRecord{id,name:if name.trim().is_empty(){"Snapshot".into()}else{name.trim().into()},created_at:created.clone(),path:root.to_string_lossy().into_owned(),size_bytes:size(&root),database_mode:site.database_mode.clone()};fs::write(meta(&root),serde_json::to_string_pretty(&record).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;site.last_snapshot_at=Some(created);registry::update_site(app,&site)?;Ok(record)
 }
 pub fn restore_snapshot(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str,snapshot_id:&str)->Result<(),String>{
-    let site=registry::get_site(app,site_id)?;if processes::is_running(state,site_id){let _=processes::stop(app,state,site_id)?}
+    let site=registry::get_site(app,site_id)?;if processes::is_running(state,site_id){let _=processes::stop(app,state,site_id)?;}
     let snap=list_snapshots(app,site_id)?.into_iter().find(|s|s.id==snapshot_id).ok_or("Snapshot not found.")?;let root=PathBuf::from(&snap.path);let public=PathBuf::from(&site.path).join("public");clear(&public)?;copy_tree(&root.join("public"),&public)?;
     match site.database_mode{DatabaseMode::Sqlite=>{if root.join("database.sqlite").exists(){fs::create_dir_all(PathBuf::from(&site.path).join("private")).map_err(|e|e.to_string())?;fs::copy(root.join("database.sqlite"),PathBuf::from(&site.path).join("private").join("database.sqlite")).map_err(|e|e.to_string())?;}},DatabaseMode::Mariadb=>processes::restore_mariadb(app,state,&site,&root.join("database.sql"))?}
     Ok(())
@@ -47,10 +47,10 @@ pub fn export_site(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str)
     Ok(archive.to_string_lossy().into_owned())
 }
 pub fn import_site(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str,archive:&str)->Result<(),String>{
-    let site=registry::get_site(app,site_id)?;if processes::is_running(state,site_id){let _=processes::stop(app,state,site_id)?}let archive=PathBuf::from(archive);if !archive.exists(){return Err("Import archive does not exist.".into())}
+    let site=registry::get_site(app,site_id)?;if processes::is_running(state,site_id){let _=processes::stop(app,state,site_id)?;}let archive=PathBuf::from(archive);if !archive.exists(){return Err("Import archive does not exist.".into())}
     let temp=PathBuf::from(&site.path).join(".pinwp").join(format!("import-{}",Uuid::new_v4().simple()));fs::create_dir_all(&temp).map_err(|e|e.to_string())?;let command=format!("Expand-Archive -Path '{}' -DestinationPath '{}' -Force",ps_quote(&archive),ps_quote(&temp));let status=Command::new("powershell").args(["-NoProfile","-Command",&command]).status().map_err(|e|e.to_string())?;if !status.success(){return Err("Unable to extract import archive.".into())}
     let public=if temp.join("public").exists(){temp.join("public")}else{temp.clone()};let target=PathBuf::from(&site.path).join("public");clear(&target)?;copy_tree(&public,&target)?;
-    if temp.join("database.sqlite").exists(){fs::copy(temp.join("database.sqlite"),PathBuf::from(&site.path).join("private").join("database.sqlite")).map_err(|e|e.to_string())?}
+    if temp.join("database.sqlite").exists(){fs::copy(temp.join("database.sqlite"),PathBuf::from(&site.path).join("private").join("database.sqlite")).map_err(|e|e.to_string())?;}
     if temp.join("database.sql").exists()&&site.database_mode==DatabaseMode::Mariadb{processes::restore_mariadb(app,state,&site,&temp.join("database.sql"))?}
     let _=fs::remove_dir_all(&temp);Ok(())
 }
