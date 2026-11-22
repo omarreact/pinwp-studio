@@ -1,8 +1,8 @@
-$ErrorActionPreference = "Stop"
-
 param(
   [string]$RuntimeRoot = "dist/runtime-windows-x64"
 )
+
+$ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $runtime = Join-Path $repoRoot $RuntimeRoot
