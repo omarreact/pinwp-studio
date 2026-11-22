@@ -34,10 +34,10 @@ try {
     Write-Host "=== MariaDB stderr ==="; if(Test-Path $serverErr){Get-Content $serverErr}
     throw "MariaDB did not become ready"
   }
-  & (Join-Path $maria "mariadb-admin.exe") --protocol=tcp -h127.0.0.1 "-P$port" -uroot "-p$password" ping
+  & (Join-Path $maria "mariadb-admin.exe") "--protocol=tcp" "--host=127.0.0.1" "--port=$port" "--user=root" "--password=$password" ping
   if($LASTEXITCODE-ne 0){throw "MariaDB root authentication failed"}
 
-  & (Join-Path $maria "mariadb.exe") -h127.0.0.1 "-P$port" -uroot "-p$password" -e "CREATE DATABASE pinwp_full CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER 'pinwp'@'127.0.0.1' IDENTIFIED BY 'pinwp'; GRANT ALL PRIVILEGES ON pinwp_full.* TO 'pinwp'@'127.0.0.1'; FLUSH PRIVILEGES;"
+  & (Join-Path $maria "mariadb.exe") "--host=127.0.0.1" "--port=$port" "--user=root" "--password=$password" -e "CREATE DATABASE pinwp_full CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER 'pinwp'@'127.0.0.1' IDENTIFIED BY 'pinwp'; GRANT ALL PRIVILEGES ON pinwp_full.* TO 'pinwp'@'127.0.0.1'; FLUSH PRIVILEGES;"
   if($LASTEXITCODE-ne 0){throw "MariaDB site database creation failed"}
 
   Copy-Item (Join-Path $runtime "wordpress/*") $site -Recurse -Force
