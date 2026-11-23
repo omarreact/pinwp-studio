@@ -134,7 +134,7 @@ extension=zip
   if($LASTEXITCODE -ne 0){throw "cloudflared check failed"}
   & (Join-Path $caddyDir "caddy.exe") version
   if($LASTEXITCODE -ne 0){throw "Caddy check failed"}
-  & (Join-Path $mailpitDir "mailpit.exe") version
+  & (Join-Path $mailpitDir "mailpit.exe") --help | Out-Null
   if($LASTEXITCODE -ne 0){throw "Mailpit check failed"}
 
   $manifest=[ordered]@{
