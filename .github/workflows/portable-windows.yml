@@ -158,9 +158,11 @@ jobs:
         run: |
           set -euo pipefail
           cd release
-          setup_expected="$(awk '/^SHA256:/ {print $2}' setup/windows-setup-sha256.txt)"
-          portable_expected="$(awk '/^ZIP SHA256:/ {print $3}' portable/portable-checksums.txt)"
-          test -n "$setup_expected" && test -n "$portable_expected"
+          # PowerShell writes CRLF; strip CR before sha256sum input validation.
+          setup_expected="$(awk '/^SHA256:/ {print $2}' setup/windows-setup-sha256.txt | tr -d '\r')"
+          portable_expected="$(awk '/^ZIP SHA256:/ {print $3}' portable/portable-checksums.txt | tr -d '\r')"
+          [[ "$setup_expected" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "Invalid setup checksum"; exit 1; }
+          [[ "$portable_expected" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "Invalid portable checksum"; exit 1; }
           test -s setup/PinWP-Studio-Windows-Setup.exe
           test -s portable/pinwp-studio-windows-portable.zip
           echo "$setup_expected  setup/PinWP-Studio-Windows-Setup.exe" | sha256sum --check -
