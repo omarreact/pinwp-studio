@@ -41,8 +41,17 @@ jobs:
       - name: Verify SQLite to MariaDB migration
         shell: pwsh
         run: ./scripts/test-database-conversion-windows.ps1
+      - name: Resolve absolute offline runtime resource path
+        shell: pwsh
+        run: |
+          $source = (Resolve-Path 'dist/runtime-windows-x64').Path
+          if (-not (Test-Path (Join-Path $source 'php/php.exe'))) { throw 'Runtime assembly is incomplete.' }
+          $config = Get-Content 'src-tauri/tauri.installer.conf.json' -Raw | ConvertFrom-Json -AsHashtable
+          $config.bundle.resources = @{ $source = 'runtime/' }
+          $config | ConvertTo-Json -Depth 20 | Set-Content 'src-tauri/tauri.installer.generated.conf.json' -Encoding utf8
+          Write-Host "Tauri resource directory: $source"
       - name: Compile and bundle NSIS setup EXE with included runtime
-        run: npm run tauri -- build --bundles nsis --config src-tauri/tauri.installer.conf.json
+        run: npm run tauri -- build --bundles nsis --config src-tauri/tauri.installer.generated.conf.json
       - name: Verify setup file and checksum
         shell: pwsh
         run: |
