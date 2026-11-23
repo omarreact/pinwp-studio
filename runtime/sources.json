@@ -1,0 +1,41 @@
+{
+  "runtimeVersion": "1.0.0",
+  "platform": "windows-x64",
+  "php": {
+    "version": "8.4.28",
+    "url": "https://downloads.php.net/~windows/releases/php-8.4.28-nts-Win32-vs17-x64.zip"
+  },
+  "wordpress": {
+    "version": "7.1.5",
+    "url": "https://wordpress.org/wordpress-7.1.5.zip"
+  },
+  "sqliteIntegration": {
+    "version": "3.1.3",
+    "url": "https://downloads.wordpress.org/plugin/sqlite-database-integration.3.1.3.zip"
+  },
+  "wpCli": {
+    "version": "2.12.0",
+    "url": "https://github.com/wp-cli/wp-cli/releases/download/v2.12.0/wp-cli-2.12.0.phar",
+    "sha256": "ce34ddd838f7351d6759068d09793f26755463b4a4610a5a5c0a97b68220d85c"
+  },
+  "mariadb": {
+    "version": "11.4.14",
+    "url": "https://downloads.mariadb.org/rest-api/mariadb/11.4.14/mariadb-11.4.14-winx64.zip",
+    "sha256": "9d9b410eb7b65f6616f29d933d76ee90cf7af4ba179a2d437e0f09f5bf6650df"
+  },
+  "cloudflared": {
+    "version": "2026.10.7",
+    "url": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-windows-amd64.exe",
+    "sha256": "2493dbc168923bb3e59e5e7716f71deced92992eea9acd6e9d74f84ac7751343"
+  },
+  "caddy": {
+    "version": "2.11.9",
+    "url": "https://github.com/caddyserver/caddy/releases/download/v2.11.9/caddy_2.11.9_windows_amd64.zip",
+    "sha256": "ad93112d335ee687100c4c9f11bced16ca590377976b7fe7883882b9e797e472"
+  },
+  "mailpit": {
+    "version": "1.34.0",
+    "url": "https://github.com/axllent/mailpit/releases/download/v1.34.0/mailpit-windows-amd64.zip",
+    "sha256": "8f080d41374bf22686606374a0a483c8563c1bf29ae078179792392ff8c911d7"
+  }
+}

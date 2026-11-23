@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.vite/
+.DS_Store
+Thumbs.db
+*.log
+
+src-tauri/target/
+src-tauri/gen/
+src-tauri/.cargo/
+
+.pinwp/
+runtime-cache/
+src-tauri/runtime/

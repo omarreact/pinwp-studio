@@ -1,0 +1,199 @@
+name: PinWP Studio Windows Portable
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main, "feat/offline-runtime-pack", "feat/full-product-v1", "fix/**", "release/**"]
+  pull_request:
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "runtime/**"
+      - "connector/**"
+      - "scripts/**"
+      - ".github/workflows/portable-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: Build complete portable Windows product
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build desktop application
+        run: |
+          npm install
+          npm run build
+          npm run tauri:build
+      - name: Build and verify complete offline WordPress runtime
+        shell: pwsh
+        run: |
+          ./scripts/build-runtime-windows.ps1
+          ./scripts/test-runtime-windows.ps1
+          ./scripts/test-full-runtime-windows.ps1
+          ./scripts/test-database-conversion-windows.ps1
+      - name: Validate PHP Connector syntax
+        shell: pwsh
+        run: |
+          & "dist/runtime-windows-x64/php/php.exe" -l "connector/pinwp-connector.php"
+          if ($LASTEXITCODE -ne 0) { throw "PinWP Connector PHP lint failed" }
+      - name: Build fully offline NSIS Windows installer
+        shell: pwsh
+        run: |
+          # Vite empties dist/ during Tauri's beforeBuildCommand.
+          # Keep the Runtime Pack in a Tauri-owned directory until NSIS completes.
+          New-Item -ItemType Directory -Force "src-tauri/runtime" | Out-Null
+          Copy-Item "dist/runtime-windows-x64/*" "src-tauri/runtime" -Recurse -Force
+          if (-not (Test-Path "src-tauri/runtime/wordpress/wp-settings.php")) {
+            throw "Missing staging runtime for Windows installer"
+          }
+          npm run tauri -- build --bundles nsis --config src-tauri/tauri.installer.conf.json
+          if ($LASTEXITCODE -ne 0) { throw "NSIS installer build failed" }
+          # Restore runtime for the portable zip; Vite may have reset dist/.
+          New-Item -ItemType Directory -Force "dist/runtime-windows-x64" | Out-Null
+          Copy-Item "src-tauri/runtime/*" "dist/runtime-windows-x64" -Recurse -Force
+      - name: Assemble portable package
+        shell: pwsh
+        run: |
+          $portable = "dist/PinWP-Studio-Portable"
+          New-Item -ItemType Directory -Force -Path $portable | Out-Null
+          Copy-Item "src-tauri/target/release/pinwp-studio.exe" (Join-Path $portable "pinwp-studio.exe")
+          Copy-Item "dist/runtime-windows-x64" (Join-Path $portable "runtime") -Recurse
+          @"
+          PinWP Studio Portable v1
+
+          Lite mode: PHP + SQLite.
+          Full mode: PHP + MariaDB.
+          Included: WP-CLI, Cloudflare Tunnel, Caddy local HTTPS, Mailpit, PinWP Connector.
+
+          Keep the runtime folder beside pinwp-studio.exe.
+          "@ | Set-Content (Join-Path $portable "README.txt") -Encoding UTF8
+          Compress-Archive -Path "$portable/*" -DestinationPath "dist/pinwp-studio-windows-portable.zip" -CompressionLevel Optimal
+          $exeHash = (Get-FileHash (Join-Path $portable "pinwp-studio.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
+          $zipHash = (Get-FileHash "dist/pinwp-studio-windows-portable.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "EXE SHA256: $exeHash" | Set-Content "dist/portable-checksums.txt"
+          "ZIP SHA256: $zipHash" | Add-Content "dist/portable-checksums.txt"
+      - name: Verify portable layout
+        shell: pwsh
+        run: |
+          $root = "dist/PinWP-Studio-Portable"
+          foreach ($required in @(
+            "$root/pinwp-studio.exe",
+            "$root/runtime/php/php.exe",
+            "$root/runtime/php/php.ini",
+            "$root/runtime/wordpress/wp-settings.php",
+            "$root/runtime/plugins/sqlite-database-integration/db.copy",
+            "$root/runtime/wp-cli/wp-cli.phar",
+            "$root/runtime/mariadb/bin/mariadbd.exe",
+            "$root/runtime/cloudflared/cloudflared.exe",
+            "$root/runtime/caddy/caddy.exe",
+            "$root/runtime/mailpit/mailpit.exe",
+            "$root/runtime/connector/pinwp-connector.zip",
+            "$root/runtime/runtime.json",
+            "$root/runtime/version-catalog.json",
+            "$root/runtime/helpers/sqlite-to-mysql.php"
+          )) {
+            if (-not (Test-Path $required)) { throw "Portable package is missing $required" }
+          }
+          Write-Host "PINWP FULL PORTABLE LAYOUT PASS"
+      - name: Verify Windows setup EXE and generate SHA-256
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe" -File | Select-Object -First 1
+          if (-not $installer -or $installer.Length -lt 1000000) {
+            throw "No valid NSIS setup executable was generated"
+          }
+          Copy-Item $installer.FullName "dist/PinWP-Studio-Windows-Setup.exe"
+          $digest = (Get-FileHash "dist/PinWP-Studio-Windows-Setup.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "SHA256: $digest" | Set-Content "dist/windows-setup-sha256.txt"
+          Write-Host "PINWP WINDOWS SETUP PASS ($digest)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinwp-studio-windows-installer
+          path: |
+            dist/PinWP-Studio-Windows-Setup.exe
+            dist/windows-setup-sha256.txt
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinwp-studio-windows-portable-v1
+          path: |
+            dist/pinwp-studio-windows-portable.zip
+            dist/portable-checksums.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-windows-beta:
+    name: Publish verified Windows beta assets to GitHub Releases
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: portable
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified setup EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: pinwp-studio-windows-installer
+          path: release/setup
+      - name: Download portable distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: pinwp-studio-windows-portable-v1
+          path: release/portable
+      - name: Verify setup and portable SHA-256 hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          setup_expected="$(awk '/^SHA256:/ {print $2}' setup/windows-setup-sha256.txt)"
+          portable_expected="$(awk '/^ZIP SHA256:/ {print $3}' portable/portable-checksums.txt)"
+          test -n "$setup_expected" && test -n "$portable_expected"
+          test -s setup/PinWP-Studio-Windows-Setup.exe
+          test -s portable/pinwp-studio-windows-portable.zip
+          echo "$setup_expected  setup/PinWP-Studio-Windows-Setup.exe" | sha256sum --check -
+          echo "$portable_expected  portable/pinwp-studio-windows-portable.zip" | sha256sum --check -
+      - name: Publish GitHub Windows beta release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v0.1.0-beta.1
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to overwrite published binaries."
+            exit 0
+          fi
+          cat > /tmp/PINWP_RELEASE_NOTES.md <<'NOTES'
+          Windows x64 **beta pre-release** of PinWP Studio.
+
+          Includes a native Tauri desktop app and bundled PHP, WordPress, SQLite Integration, MariaDB, WP-CLI, Caddy, cloudflared, and Mailpit.
+
+          The NSIS setup executable includes the offline WebView2 runtime. The portable archive is a separate alternative.
+
+          **Security and quality notice:** This build is unsigned, is not certified by Windows SmartScreen, and has not passed physical clean-machine GUI testing. Use it for development and local WordPress sites; do not treat remote deployment and rollback features as production verified. Back up any content before testing import, migration or deployment.
+
+          The setup and portable package SHA-256 hashes are attached for integrity checks.
+          NOTES
+          gh release create "$TAG" \
+            release/setup/PinWP-Studio-Windows-Setup.exe \
+            release/setup/windows-setup-sha256.txt \
+            release/portable/pinwp-studio-windows-portable.zip \
+            release/portable/portable-checksums.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "PinWP Studio v0.1.0 beta 1 — Windows Offline" \
+            --notes-file /tmp/PINWP_RELEASE_NOTES.md \
+            --prerelease

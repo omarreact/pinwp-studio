@@ -1,0 +1,42 @@
+use crate::{models::{DatabaseMode,DatabaseResult},processes::{self,ProcessRegistry},registry,runtime};
+use std::{fs,path::PathBuf,process::Command};
+use tauri::{AppHandle,State};
+
+fn is_read_only(sql: &str) -> bool {
+    let statement = sql.trim().trim_end_matches(';').trim_end();
+    if statement.is_empty() || statement.contains(';') { return false; }
+    let normalized = statement.to_ascii_lowercase();
+    let verb = normalized.split_whitespace().next().unwrap_or("");
+    // PRAGMA and WITH can mutate data. Block file-writing SELECT forms.
+    matches!(verb, "select" | "show" | "describe" | "desc" | "explain")
+        && !normalized.contains("into outfile")
+        && !normalized.contains("into dumpfile")
+        && !normalized.contains("load_file(")
+}
+
+pub fn query(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str,sql:&str,allow_write:bool)->Result<DatabaseResult,String>{
+    if sql.trim().is_empty(){return Err("SQL is empty.".into())}
+    if !allow_write&&!is_read_only(sql){return Err("Write SQL is blocked. Enable write mode explicitly for this query.".into())}
+    let site=registry::get_site(app,site_id)?;if !site.provisioned{return Err("WordPress is not installed.".into())}
+    let output=match site.database_mode{
+        DatabaseMode::Mariadb=>{
+            let query = if allow_write { sql.to_owned() } else {
+                format!("START TRANSACTION READ ONLY; {}; ROLLBACK;", sql.trim().trim_end_matches(';'))
+            };
+            processes::mariadb_query(app,state,&site,&query)?
+        },
+        DatabaseMode::Sqlite=>{
+            let script=PathBuf::from(&site.path).join(".pinwp").join("db-query.php");
+            fs::write(&script,r#"<?php
+$db=getenv('PINWP_DB');$sql=getenv('PINWP_SQL');$pdo=new PDO('sqlite:'.$db);$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
+if(getenv('PINWP_READ_ONLY')==='1'){$pdo->exec('PRAGMA query_only=ON');}
+$stmt=$pdo->prepare($sql);$stmt->execute();if($stmt->columnCount()>0){echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC),JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);}else{echo "Rows affected: ".$stmt->rowCount();}
+"#).map_err(|e|e.to_string())?;
+            let db=PathBuf::from(&site.path).join("private").join("database.sqlite");
+            let out=Command::new(runtime::php_exe(app)?).arg("-c").arg(runtime::php_ini(app)?).arg(&script).env("PINWP_DB",&db).env("PINWP_SQL",sql).env("PINWP_READ_ONLY",if allow_write {"0"} else {"1"}).output().map_err(|e|e.to_string())?;
+            if !out.status.success(){return Err(String::from_utf8_lossy(&out.stderr).to_string())}
+            String::from_utf8_lossy(&out.stdout).to_string()
+        }
+    };
+    Ok(DatabaseResult{output,rows_affected:None})
+}
