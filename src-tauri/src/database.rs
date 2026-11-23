@@ -2,7 +2,18 @@ use crate::{models::{DatabaseMode,DatabaseResult},processes::{self,ProcessRegist
 use std::{fs,path::PathBuf,process::Command};
 use tauri::{AppHandle,State};
 
-fn is_read_only(sql:&str)->bool{let t=sql.trim_start().to_ascii_lowercase();["select","show","describe","desc","pragma","explain","with"].iter().any(|p|t.starts_with(p))}
+fn is_read_only(sql: &str) -> bool {
+    let normalized = sql.trim().to_ascii_lowercase();
+    let statement = normalized.trim_end_matches(';').trim();
+    if statement.is_empty() || statement.contains(';')
+        || statement.contains("--") || statement.contains("/*") || statement.contains('#')
+        || [" into ", " outfile ", " dumpfile ", " for update", " lock in share mode"]
+            .iter().any(|token| statement.contains(token)) {
+        return false;
+    }
+    ["select ", "show ", "describe ", "desc ", "explain "]
+        .iter().any(|prefix| statement.starts_with(prefix))
+}
 pub fn query(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str,sql:&str,allow_write:bool)->Result<DatabaseResult,String>{
     if sql.trim().is_empty(){return Err("SQL is empty.".into())}
     if !allow_write&&!is_read_only(sql){return Err("Write SQL is blocked. Enable write mode explicitly for this query.".into())}
@@ -12,11 +23,11 @@ pub fn query(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str,sql:&s
         DatabaseMode::Sqlite=>{
             let script=PathBuf::from(&site.path).join(".pinwp").join("db-query.php");
             fs::write(&script,r#"<?php
-$db=getenv('PINWP_DB');$sql=getenv('PINWP_SQL');$pdo=new PDO('sqlite:'.$db);$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
+$db=getenv('PINWP_DB');$sql=getenv('PINWP_SQL');$pdo=new PDO('sqlite:'.$db);$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);if(getenv('PINWP_READ_ONLY')==='1'){$pdo->exec('PRAGMA query_only = ON');}
 $stmt=$pdo->prepare($sql);$stmt->execute();if($stmt->columnCount()>0){echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC),JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);}else{echo "Rows affected: ".$stmt->rowCount();}
 "#).map_err(|e|e.to_string())?;
             let db=PathBuf::from(&site.path).join("private").join("database.sqlite");
-            let out=Command::new(runtime::php_exe(app)?).arg("-c").arg(runtime::php_ini(app)?).arg(&script).env("PINWP_DB",&db).env("PINWP_SQL",sql).output().map_err(|e|e.to_string())?;
+            let out=Command::new(runtime::php_exe(app)?).arg("-c").arg(runtime::php_ini(app)?).arg(&script).env("PINWP_DB",&db).env("PINWP_SQL",sql).env("PINWP_READ_ONLY",if allow_write {"0"}else{"1"}).output().map_err(|e|e.to_string())?;
             if !out.status.success(){return Err(String::from_utf8_lossy(&out.stderr).to_string())}
             String::from_utf8_lossy(&out.stdout).to_string()
         }
