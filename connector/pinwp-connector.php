@@ -34,8 +34,23 @@ add_action('rest_api_init', function () {
             }
 
             $upload = wp_upload_dir();
-            $backup_dir = trailingslashit($upload['basedir']) . 'pinwp-backups';
-            wp_mkdir_p($backup_dir);
+            // Store complete WordPress backups outside the web document root.
+            // If the hosting layout cannot guarantee this, refuse deployment.
+            $root = realpath(ABSPATH);
+            $document_root = realpath(isset($_SERVER['DOCUMENT_ROOT']) ? $_SERVER['DOCUMENT_ROOT'] : ABSPATH);
+            if (!$root || !$document_root) {
+                return new WP_Error('pinwp_unsafe_backup', 'Unable to verify the private backup location.', ['status' => 500]);
+            }
+            $backup_dir = dirname($root) . DIRECTORY_SEPARATOR . '.pinwp-private-backups';
+            if (!wp_mkdir_p($backup_dir)) {
+                return new WP_Error('pinwp_backup_failed', 'Unable to create a private backup directory.', ['status' => 500]);
+            }
+            $backup_dir = realpath($backup_dir);
+            if (!$backup_dir || $backup_dir === $document_root ||
+                strpos($backup_dir . DIRECTORY_SEPARATOR, trailingslashit($document_root)) === 0) {
+                return new WP_Error('pinwp_unsafe_backup', 'Backups would be web-accessible. Deployment refused.', ['status' => 403]);
+            }
+            @chmod($backup_dir, 0700);
             $stamp = gmdate('Ymd-His');
             $backup = $backup_dir . '/pre-pinwp-' . $stamp . '.zip';
 
@@ -43,7 +58,6 @@ add_action('rest_api_init', function () {
             if ($zip->open($backup, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
                 return new WP_Error('pinwp_backup_failed', 'Unable to create backup archive.', ['status' => 500]);
             }
-            $root = realpath(ABSPATH);
             $iterator = new RecursiveIteratorIterator(
                 new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
                 RecursiveIteratorIterator::LEAVES_ONLY
@@ -62,7 +76,22 @@ add_action('rest_api_init', function () {
             if ($package->open($_FILES['package']['tmp_name']) !== true) {
                 return new WP_Error('pinwp_invalid_package', 'Unable to open PinWP package.', ['status' => 400]);
             }
-            $package->extractTo($temp);
+            // Validate archive entry paths before extraction (Zip Slip prevention).
+            for ($i = 0; $i < $package->numFiles; $i++) {
+                $name = $package->getNameIndex($i);
+                $normalized = str_replace('\\', '/', $name);
+                $segments = explode('/', $normalized);
+                if ($name === false || strpos($normalized, '/') === 0 ||
+                    preg_match('/^[A-Za-z]:/', $normalized) ||
+                    in_array('..', $segments, true) || strpos($normalized, "\0") !== false) {
+                    $package->close();
+                    return new WP_Error('pinwp_unsafe_archive', 'Unsafe archive entry detected.', ['status' => 400]);
+                }
+            }
+            if (!$package->extractTo($temp)) {
+                $package->close();
+                return new WP_Error('pinwp_extract_failed', 'Unable to extract deployment package.', ['status' => 500]);
+            }
             $package->close();
 
             $source = trailingslashit($temp) . 'public';
