@@ -78,4 +78,27 @@ pub fn export_database_sql(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_
     Ok(destination.to_string_lossy().into_owned())
 }
 pub fn list_logs(app:&AppHandle,site_id:&str)->Result<Vec<LogRecord>,String>{let site=registry::get_site(app,site_id)?;let root=PathBuf::from(&site.path);let candidates=[root.join("logs").join("php-server.log"),root.join("logs").join("cloudflared.log"),root.join("public").join("wp-content").join("debug.log"),registry::services_root(app)?.join("mariadb.log"),registry::services_root(app)?.join("mailpit.log")];let mut out=Vec::new();for p in candidates{if let Ok(m)=fs::metadata(&p){let modified=m.modified().ok().and_then(|t|t.duration_since(UNIX_EPOCH).ok()).map(|d|d.as_secs().to_string());out.push(LogRecord{name:p.file_name().and_then(|v|v.to_str()).unwrap_or("log").into(),path:p.to_string_lossy().into_owned(),size_bytes:m.len(),modified_at:modified});}}Ok(out)}
-pub fn read_log(path:&str,max_bytes:usize)->Result<String,String>{let data=fs::read(path).map_err(|e|e.to_string())?;let start=data.len().saturating_sub(max_bytes.max(1024).min(1024*1024));Ok(String::from_utf8_lossy(&data[start..]).to_string())}
+pub fn read_log(app: &AppHandle, path: &str, max_bytes: usize) -> Result<String, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let requested = fs::canonicalize(path)
+        .map_err(|e| format!("Unable to resolve log path: {e}"))?;
+    let mut permitted = false;
+    for site in registry::load_sites(app)? {
+        for log in list_logs(app, &site.id)? {
+            if let Ok(actual) = fs::canonicalize(&log.path) {
+                if actual == requested { permitted = true; break; }
+            }
+        }
+        if permitted { break; }
+    }
+    if !permitted {
+        return Err("Only registered site and service log files can be viewed.".into());
+    }
+    let mut file = fs::File::open(&requested).map_err(|e| e.to_string())?;
+    let len = file.metadata().map_err(|e| e.to_string())?.len();
+    let count = (max_bytes.max(1024).min(1024 * 1024) as u64).min(len);
+    file.seek(SeekFrom::Start(len - count)).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::with_capacity(count as usize);
+    file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
