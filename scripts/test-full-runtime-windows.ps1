@@ -51,7 +51,7 @@ try {
 
   & (Join-Path $runtime "cloudflared/cloudflared.exe") --version
   & (Join-Path $runtime "caddy/caddy.exe") version
-  & (Join-Path $runtime "mailpit/mailpit.exe") version
+  & (Join-Path $runtime "mailpit/mailpit.exe") --help | Out-Null
   if(-not(Test-Path(Join-Path $runtime "connector/pinwp-connector.zip"))){throw "Connector package missing"}
 
   Write-Host "PINWP FULL MODE SMOKE PASS"
