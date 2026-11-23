@@ -23,7 +23,7 @@ pub fn restore_snapshot(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:
     Ok(())
 }
 pub fn delete_snapshot(app:&AppHandle,site_id:&str,snapshot_id:&str)->Result<(),String>{let snap=list_snapshots(app,site_id)?.into_iter().find(|s|s.id==snapshot_id).ok_or("Snapshot not found.")?;fs::remove_dir_all(snap.path).map_err(|e|e.to_string())}
-fn ps_quote(path:&Path)->String{path.to_string_lossy().replace(''',"''")}
+fn ps_quote(path:&Path)->String{path.to_string_lossy().replace('\'',"''")}
 pub fn export_site(app:&AppHandle,state:&State<'_,ProcessRegistry>,site_id:&str)->Result<String,String>{
     let site=registry::get_site(app,site_id)?;
     let root=PathBuf::from(&site.path);
