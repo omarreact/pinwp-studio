@@ -33,7 +33,6 @@ add_action('rest_api_init', function () {
                 return new WP_Error('pinwp_zip_missing', 'ZipArchive is required.', ['status' => 500]);
             }
 
-            $upload = wp_upload_dir();
             // Store complete WordPress backups outside the web document root.
             // If the hosting layout cannot guarantee this, refuse deployment.
             $root = realpath(ABSPATH);
@@ -70,8 +69,12 @@ add_action('rest_api_init', function () {
             }
             $zip->close();
 
-            $temp = trailingslashit($upload['basedir']) . 'pinwp-deploy-' . wp_generate_uuid4();
-            wp_mkdir_p($temp);
+            // Never stage incoming archives under wp-content/uploads.
+            $temp = trailingslashit(sys_get_temp_dir()) . 'pinwp-deploy-' . wp_generate_uuid4();
+            if (!wp_mkdir_p($temp)) {
+                return new WP_Error('pinwp_temp_failed', 'Unable to create private deployment staging.', ['status' => 500]);
+            }
+            @chmod($temp, 0700);
             $package = new ZipArchive();
             if ($package->open($_FILES['package']['tmp_name']) !== true) {
                 return new WP_Error('pinwp_invalid_package', 'Unable to open PinWP package.', ['status' => 400]);
