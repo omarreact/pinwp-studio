@@ -32,6 +32,12 @@ function mysql_type(string $sqliteType): string {
     if (str_contains($type, 'TIME')) return 'TIME';
     return 'LONGTEXT';
 }
+function mysql_index_column(string $name, string $mysqlType): string {
+    // InnoDB requires a prefix length when indexing TEXT/BLOB columns.
+    // 191 characters fits historical utf8mb4 index limits.
+    $column = qi($name);
+    return preg_match('/(?:TEXT|BLOB)$/i', $mysqlType) ? $column . '(191)' : $column;
+}
 function value_sql(mixed $value): string {
     if ($value === null) return 'NULL';
     if (is_int($value) || is_float($value)) return (string)$value;
@@ -44,6 +50,9 @@ echo "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\nSET SQL_MODE='NO_AUTO_VALUE
 $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
 
 foreach ($tables as $table) {
+    // SQLite Database Integration bookkeeping is not WordPress application data
+    // and should never be imported into a native MariaDB database.
+    if (str_starts_with((string)$table, '_wp_sqlite_')) continue;
     $columns = $pdo->query("PRAGMA table_info(" . qi($table) . ")")->fetchAll();
     if (!$columns) continue;
     $primary = array_values(array_filter($columns, fn($column) => (int)$column['pk'] > 0));
@@ -59,7 +68,7 @@ foreach ($tables as $table) {
         $definitions[] = $definition;
     }
     if ($primary) {
-        $definitions[] = 'PRIMARY KEY (' . implode(',', array_map(fn($column) => qi((string)$column['name']), $primary)) . ')';
+        $definitions[] = 'PRIMARY KEY (' . implode(',', array_map(fn($column) => mysql_index_column((string)$column['name'], mysql_type((string)$column['type'])), $primary)) . ')';
     }
 
     $indexes = $pdo->query("PRAGMA index_list(" . qi($table) . ")")->fetchAll();
@@ -69,7 +78,10 @@ foreach ($tables as $table) {
         $info = $pdo->query("PRAGMA index_info(" . qi($name) . ")")->fetchAll();
         if (!$info) continue;
         usort($info, fn($a, $b) => (int)$a['seqno'] <=> (int)$b['seqno']);
-        $cols = implode(',', array_map(fn($row) => qi((string)$row['name']), $info));
+        $cols = implode(',', array_map(function($row) use ($columns) {
+            $column = array_values(array_filter($columns, fn($candidate) => $candidate['name'] === $row['name']))[0] ?? null;
+            return mysql_index_column((string)$row['name'], mysql_type((string)($column['type'] ?? 'TEXT')));
+        }, $info));
         $definitions[] = ((int)$index['unique'] === 1 ? 'UNIQUE KEY ' : 'KEY ') . qi($name) . ' (' . $cols . ')';
     }
 

@@ -20,7 +20,7 @@ fn probe(name:&str,exe:&str,args:&[&str])->ToolProbe{match Command::new(exe).arg
 #[tauri::command]fn export_database_sql(app:AppHandle,state:State<'_,ProcessRegistry>,id:String)->Result<String,String>{workspace::export_database_sql(&app,&state,&id)}
 #[tauri::command]fn import_site(app:AppHandle,state:State<'_,ProcessRegistry>,id:String,archive:String)->Result<(),String>{workspace::import_site(&app,&state,&id,&archive)}
 #[tauri::command]fn list_logs(app:AppHandle,id:String)->Result<Vec<LogRecord>,String>{workspace::list_logs(&app,&id)}
-#[tauri::command]fn read_log(path:String,max_bytes:usize)->Result<String,String>{workspace::read_log(&path,max_bytes)}
+#[tauri::command]fn read_log(app:AppHandle,path:String,max_bytes:usize)->Result<String,String>{workspace::read_log(&app,&path,max_bytes)}
 #[tauri::command]fn git_status(app:AppHandle,id:String)->Result<GitInfo,String>{git_tools::status(&app,&id)}
 #[tauri::command]fn git_init(app:AppHandle,id:String)->Result<GitInfo,String>{git_tools::init(&app,&id)}
 #[tauri::command]fn git_commit(app:AppHandle,id:String,message:String)->Result<GitInfo,String>{git_tools::commit(&app,&id,&message)}

@@ -10,21 +10,28 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{
-      "label": "main",
-      "title": "PinWP Studio",
-      "width": 1440,
-      "height": 900,
-      "minWidth": 1024,
-      "minHeight": 700,
-      "center": true,
-      "resizable": true
-    }],
-    "security": { "csp": null }
+    "windows": [
+      {
+        "label": "main",
+        "title": "PinWP Studio",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
     "category": "DeveloperTool",
     "shortDescription": "Local WordPress development workstation"
   }
