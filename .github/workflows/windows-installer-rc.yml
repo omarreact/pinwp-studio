@@ -3,6 +3,8 @@ name: PinWP Windows Installer Release Candidate
 on:
   push:
     branches: ["fix/release-hardening-20261123"]
+  pull_request:
+    branches: ["feat/full-product-v1"]
   workflow_dispatch:
 
 permissions:
