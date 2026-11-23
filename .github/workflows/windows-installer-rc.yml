@@ -1,0 +1,61 @@
+name: PinWP Windows Installer Release Candidate
+
+on:
+  push:
+    branches: ["fix/release-hardening-20261123"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pinwp-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-installer:
+    name: Verify offline runtime and package Windows EXE installer
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend dependencies
+        run: npm install
+      - name: Verify TypeScript and Vite
+        run: npm run build
+      - name: Assemble pinned offline runtime
+        shell: pwsh
+        run: ./scripts/build-runtime-windows.ps1
+      - name: Verify real SQLite WordPress install
+        shell: pwsh
+        run: ./scripts/test-runtime-windows.ps1
+      - name: Verify real MariaDB WordPress install
+        shell: pwsh
+        run: ./scripts/test-full-runtime-windows.ps1
+      - name: Verify SQLite to MariaDB migration
+        shell: pwsh
+        run: ./scripts/test-database-conversion-windows.ps1
+      - name: Compile and bundle NSIS setup EXE with included runtime
+        run: npm run tauri -- build --bundles nsis --config src-tauri/tauri.installer.conf.json
+      - name: Verify setup file and checksum
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe" -File | Select-Object -First 1
+          if (-not $installer) { throw "Tauri NSIS setup EXE was not generated." }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "File: $($installer.Name)" | Set-Content "src-tauri/target/release/bundle/nsis/SHA256SUMS.txt"
+          "SHA256: $hash" | Add-Content "src-tauri/target/release/bundle/nsis/SHA256SUMS.txt"
+          Write-Host "PINWP NSIS INSTALLER BUILT: $($installer.Name)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinwp-studio-windows-installer-release-candidate
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
