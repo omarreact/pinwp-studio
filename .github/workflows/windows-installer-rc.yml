@@ -44,7 +44,11 @@ jobs:
       - name: Resolve absolute offline runtime resource path
         shell: pwsh
         run: |
-          $source = (Resolve-Path 'dist/runtime-windows-x64').Path.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+          # Vite clears dist/ during tauri's beforeBuildCommand.
+          # Move the complete runtime outside dist/ before invoking tauri build.
+          New-Item -ItemType Directory -Force 'installer-assets' | Out-Null
+          Move-Item 'dist/runtime-windows-x64' 'installer-assets/runtime'
+          $source = (Resolve-Path 'installer-assets/runtime').Path.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
           if (-not (Test-Path (Join-Path $source 'php/php.exe'))) { throw 'Runtime assembly is incomplete.' }
           $config = Get-Content 'src-tauri/tauri.installer.conf.json' -Raw | ConvertFrom-Json -AsHashtable
           $config.bundle.resources = @{ $source = 'runtime/' }
