@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: ["feat/offline-runtime-pack", "feat/full-product-v1", "fix/**"]
+    branches: [main, "feat/offline-runtime-pack", "feat/full-product-v1", "fix/**", "release/**"]
   pull_request:
     paths:
       - "src/**"
@@ -134,3 +134,66 @@ jobs:
             dist/portable-checksums.txt
           if-no-files-found: error
           retention-days: 14
+
+  publish-windows-beta:
+    name: Publish verified Windows beta assets to GitHub Releases
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: portable
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified setup EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: pinwp-studio-windows-installer
+          path: release/setup
+      - name: Download portable distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: pinwp-studio-windows-portable-v1
+          path: release/portable
+      - name: Verify setup and portable SHA-256 hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          setup_expected="$(awk '/^SHA256:/ {print $2}' setup/windows-setup-sha256.txt)"
+          portable_expected="$(awk '/^ZIP SHA256:/ {print $3}' portable/portable-checksums.txt)"
+          test -n "$setup_expected" && test -n "$portable_expected"
+          test -s setup/PinWP-Studio-Windows-Setup.exe
+          test -s portable/pinwp-studio-windows-portable.zip
+          echo "$setup_expected  setup/PinWP-Studio-Windows-Setup.exe" | sha256sum --check -
+          echo "$portable_expected  portable/pinwp-studio-windows-portable.zip" | sha256sum --check -
+      - name: Publish GitHub Windows beta release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v0.1.0-beta.1
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to overwrite published binaries."
+            exit 0
+          fi
+          cat > /tmp/PINWP_RELEASE_NOTES.md <<'NOTES'
+          Windows x64 **beta pre-release** of PinWP Studio.
+
+          Includes a native Tauri desktop app and bundled PHP, WordPress, SQLite Integration, MariaDB, WP-CLI, Caddy, cloudflared, and Mailpit.
+
+          The NSIS setup executable includes the offline WebView2 runtime. The portable archive is a separate alternative.
+
+          **Security and quality notice:** This build is unsigned, is not certified by Windows SmartScreen, and has not passed physical clean-machine GUI testing. Use it for development and local WordPress sites; do not treat remote deployment and rollback features as production verified. Back up any content before testing import, migration or deployment.
+
+          The setup and portable package SHA-256 hashes are attached for integrity checks.
+          NOTES
+          gh release create "$TAG" \
+            release/setup/PinWP-Studio-Windows-Setup.exe \
+            release/setup/windows-setup-sha256.txt \
+            release/portable/pinwp-studio-windows-portable.zip \
+            release/portable/portable-checksums.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "PinWP Studio v0.1.0 beta 1 — Windows Offline" \
+            --notes-file /tmp/PINWP_RELEASE_NOTES.md \
+            --prerelease
