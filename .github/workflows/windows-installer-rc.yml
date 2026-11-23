@@ -44,7 +44,7 @@ jobs:
       - name: Resolve absolute offline runtime resource path
         shell: pwsh
         run: |
-          $source = (Resolve-Path 'dist/runtime-windows-x64').Path
+          $source = (Resolve-Path 'dist/runtime-windows-x64').Path.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
           if (-not (Test-Path (Join-Path $source 'php/php.exe'))) { throw 'Runtime assembly is incomplete.' }
           $config = Get-Content 'src-tauri/tauri.installer.conf.json' -Raw | ConvertFrom-Json -AsHashtable
           $config.bundle.resources = @{ $source = 'runtime/' }
